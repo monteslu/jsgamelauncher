@@ -498,7 +498,7 @@ async function main() {
 
   // Log the FPS (frames per second)
   setInterval(() => {
-    // somtimes console.log throws an error ¯\_(ツ)_/¯
+    // sometimes console.log throws an error ¯\_(ツ)_/¯
     try {
       console.log(fps, 'FPS',
         'window.WxH', backCanvas.width, backCanvas.height,

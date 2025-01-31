@@ -2,7 +2,7 @@
 
 <img src="./media/device-examples.jpg" height="300" align="right" alt="RG40XXV with Phaser demo">
 
-A compatibly layer for JavaScript games to run WITHOUT a browser or electron using standard web APIs.
+A compatibility layer for JavaScript games to run WITHOUT a browser or electron using standard web APIs.
 
 The goal is to run games on cheap ($50) retro devices (or even not so cheap ones as long as they run Linux . . . for now!) that will also run in browsers without any changes.
 
@@ -28,7 +28,7 @@ Right now we have support for anything that runs [Knulli](https://knulli.org/) a
 
 3D effects are not supported, but you can use the canvas API to draw 3D graphics.
 
-Other engines might work we just haven't tried them!
+Other engines might work, we just haven't tried them!
 
 ## Sample games
 
@@ -107,4 +107,4 @@ Coming soon! According to [joyrider3774](https://www.reddit.com/user/joyrider377
 
 ## Media
 
-Check the [MEDIA.md](MEDIA.md) for a running list of places this project has been posted. Not a comprehensive list of course but it helps us keep track for sharing in the future. If you see anything you liked that missing let us know . . . we might have missed it.
+Check the [MEDIA.md](MEDIA.md) for a running list of places this project has been posted. Not a comprehensive list of course but it helps us keep track for sharing in the future. If you see anything you liked that is missing let us know . . . we might have missed it.
