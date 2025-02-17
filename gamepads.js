@@ -28,9 +28,9 @@ function getControllerDef(device) {
   });
   // console.log('matchedAdditional? :', matchedAdditional);
   if (matchedAdditional?.length) {
-    // console.log('matchedAdditional yes', matchedAdditional);
-    // last (most recent) one on the list
-    return matchedAdditional[matchedAdditional.length - 1];
+    def = matchedAdditional[matchedAdditional.length - 1];
+    def.fromAdditional = true;
+    return def;
   }
 
   const matchedGuids = controllerList.filter((c) => c.guid === device.guid);
@@ -42,6 +42,7 @@ function getControllerDef(device) {
     if (matchedGuidAndName.length === 1) {
       return matchedGuidAndName[0];
     }
+    // multiple controllers with same guid and name, pick the longest input list
     if (matchedGuidAndName.length > 1) {
       def = matchedGuidAndName[0];
       for (const c of matchedGuidAndName) {
@@ -51,6 +52,7 @@ function getControllerDef(device) {
       }
       return def;
     }
+    // matchedGuids, but not name, pick the longest input list
     def = matchedGuids[0];
     for (const c of matchedGuids) {
       if (c.input.length > def.input.length) {
@@ -100,7 +102,7 @@ const esButtonMap = {
 
 function createJSMap(device) {
   const def = getControllerDef(device);
-  console.log('createJSMap def', def?.name, def?.guid);
+  console.log('createJSMap def', def?.name, def?.guid, def?.fromDB);
   if (!def) {
     return;
   }
@@ -130,6 +132,7 @@ function createJSMap(device) {
       const val = e.value;
       // gp.axes[e.axix] = e.value;
       const axesDefs = axes[e.axis];
+      console.log('axesHandler', e.axis, val, axesDefs);
       if (!axesDefs) {
         return;
       }

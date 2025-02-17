@@ -21,9 +21,13 @@ import initializeFontFace from './fontface.js';
 
 
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
+  console.error('Uncaught Exception:', err, err.code);
   if (err.code === 'EPIPE') {
     // console.log('EPIPE');
+    // process.exit(0);
+    return;
+  } else if (err.message.includes('SDL_JoystickPathForIndex')) {
+    // console.log('ECONNRESET');
     // process.exit(0);
     return;
   }
@@ -52,7 +56,7 @@ globalThis.global = globalThis;
 globalThis.self = globalThis;
 console.log('LAUNCHING....');
 let canvas;
-
+let stretchToWindow = false;
 globalThis.window = globalThis;
 globalThis._jsg = { controllers: [], joysticks: [], sdl, nrsc };
 globalThis.HTMLCanvasElement = nrsc.Canvas;
@@ -272,20 +276,6 @@ const resize = () => {
   let backCanvasWidth = pixelWidth;
   let backCanvasHeight = pixelHeight;
   windowRatio = pixelWidth / pixelHeight;
-
-  if (canvas) {
-    const canvasRatio = canvas.width / canvas.height;
-    if (windowRatio > canvasRatio) {
-      // window is wider than canvas
-      backCanvasHeight = canvas.height;
-      backCanvasWidth = Math.round(backCanvasHeight * windowRatio);
-    } else {
-      // window is taller than canvas
-      backCanvasWidth = canvas.width;
-      backCanvasHeight = Math.round(backCanvasWidth / windowRatio);
-    }
-  }
-
   backCanvas = createCanvas(backCanvasWidth, backCanvasHeight);
   if (canvasAutoResize && canvas) {
     canvas.width = pixelWidth;
@@ -384,38 +374,45 @@ async function main() {
 
   async function launcherDraw() {
     const canvasRatio = canvas.width / canvas.height;
-    // Calculate the percentage difference
-    aspectRatioDifference = Math.abs(windowRatio - canvasRatio) / windowRatio;
-    useBackCanvas = aspectRatioDifference > ASPECT_RATIO_TOLERANCE;
+    let drawX,drawY,drawWidth,drawHeight;
+
+    if (windowRatio > canvasRatio) {
+      // window is wider than canvas
+      // stretch to window while maintaining aspect ratio
+      drawHeight = appWindow.pixelHeight;
+      drawWidth = Math.round(drawHeight * canvasRatio);
+      drawX = Math.round((appWindow.pixelWidth - drawWidth) / 2);
+      drawY = 0;
+    } else {
+      // canvas is taller than window
+      // stretch to window while maintaining aspect ratio
+      drawWidth = appWindow.pixelWidth;
+      drawHeight = Math.round(drawWidth / canvasRatio);
+      drawX = 0;
+      drawY = Math.round((appWindow.pixelHeight - drawHeight) / 2);
+    }
+
 
     const startImageDrawTime = performance.now();
-    let buffer;
-    if (useBackCanvas) {
-      const backCtx = backCanvas.getContext('2d');
-      backCtx.imageSmoothingEnabled = false;
-      backCtx.clearRect(0, 0, backCanvas.width, backCanvas.height);
-      if (canvasRatio > windowRatio) {
-        backCtx.drawImage(canvas, 0, Math.round((backCanvas.height - canvas.height) / 2), canvas.width, canvas.height);
-      } else {
-        backCtx.drawImage(canvas, Math.round((backCanvas.width - canvas.width) / 2), 0, canvas.width, backCanvas.height);
-      }
-      if (showFPS) {
-        drawFPS(backCtx);
-      }
-      buffer = Buffer.from(backCanvas.data().buffer);
-    } else {
-      if (showFPS) {
-        drawFPS(ctx);
-      }
-      buffer = Buffer.from(canvas.data().buffer);
+    if (showFPS) {
+      drawFPS(ctx);
     }
+    const buffer = Buffer.from(canvas.data().buffer);
     imageDrawTime+= (performance.now() - startImageDrawTime);
 
     const startWindowRenderTime = performance.now();
-    if (useBackCanvas) {
-      await appWindow.render(backCanvas.width, backCanvas.height, backCanvas.width * 4, 'rgba32', buffer);
-    } else {
+    if (stretchToWindow) {
       await appWindow.render(canvas.width, canvas.height, canvas.width * 4, 'rgba32', buffer);
+    } else {
+      await appWindow.render(canvas.width, canvas.height, canvas.width * 4, 'rgba32', buffer, {
+        scaling: 'nearest',
+        dstRect: {
+          x: drawX,
+          y: drawY,
+          width: drawWidth,
+          height: drawHeight,
+        },
+      });
     }
     windowRenderTime+= (performance.now() - startWindowRenderTime);
   }
