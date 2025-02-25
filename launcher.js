@@ -79,6 +79,9 @@ class MutationObserver {
 }
 globalThis.MutationObserver = MutationObserver;
 const document = {
+  set title(newTitle) {
+    appWindow.setTitle(newTitle);
+  },
   getElementById: (id) => {
     // console.log('document.getElementById', id, canvas);
     return canvas;
