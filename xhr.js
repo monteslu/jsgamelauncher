@@ -21,7 +21,8 @@ export default function createXMLHttpRequest(gameDir) {
       // Determine if it's a local file
       if (!lcUrl.startsWith('http') && !lcUrl.startsWith('//')) {
         this.isFSFilePath = true;
-        this.localFilePath = path.join(resourcePath, url);
+        const decodedUrl = decodeURIComponent(url);
+        this.localFilePath = path.join(resourcePath, decodedUrl);
       } else {
         this.isFSFilePath = false;
       }
