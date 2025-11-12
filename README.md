@@ -14,13 +14,13 @@ Right now we have support for anything that runs [Knulli](https://knulli.org/) a
 - [x] WebAudio
 - [x] Keyboard events
 - [x] Gamepad API
-- [x] FontFace 
+- [x] FontFace
 - [x] LocalStorage
 - [x] Web Assembly (WASM)
 - [x] Web Workers
 - [x] WebSockets
 - [ ] Peer Connection
-- [ ] WebGL (Canvas 3D)
+- [x] WebGL (Canvas 3D)
 
 ## Game making guidelines
 

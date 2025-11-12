@@ -29,7 +29,18 @@ function getFinalUrl(gamePath, url) {
 }
 
 export function createLoadImage(gamePath) {
-  // console.log('createLoadImage', gamePath);
+  // check if gamePath has a public/ folder in it
+  let publicDir = path.join(gamePath, 'public');
+  if (fs.existsSync(publicDir)) {
+    gamePath = publicDir;
+  } else {
+    // check parent directory for public folder (for projects with src/ structure)
+    publicDir = path.join(gamePath, '..', 'public');
+    if (fs.existsSync(publicDir)) {
+      gamePath = publicDir;
+    }
+  }
+
   return (url, force) => {
     // console.log('loadImage...', gamePath, url, force);
     let finalUrl = url;
@@ -42,9 +53,15 @@ export function createLoadImage(gamePath) {
 
 export function createImageClass(gamePath) {
   // check if gamePath has a public/ folder in it
-  const publicDir = path.join(gamePath, 'public');
+  let publicDir = path.join(gamePath, 'public');
   if (fs.existsSync(publicDir)) {
     gamePath = publicDir;
+  } else {
+    // check parent directory for public folder (for projects with src/ structure)
+    publicDir = path.join(gamePath, '..', 'public');
+    if (fs.existsSync(publicDir)) {
+      gamePath = publicDir;
+    }
   }
   class Image {
     constructor(width, height) {
