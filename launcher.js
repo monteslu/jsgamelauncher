@@ -192,44 +192,58 @@ if (!fs.existsSync(romFile)) {
   console.error('rom file not found', romFile);
   process.exit(1);
 }
-
-
 const romDir = path.dirname(romFile);
 console.log('romFile', romFile, 'romDir', romDir);
 let gameFile;
-const tryOrder = [
-  ['main.js'],
-  ['src', 'main.js'],
-  ['index.js'],
-  ['src', 'index.js'],
-  ['game.js'],
-  ['src', 'game.js'],
-]
-for (const order of tryOrder) {
-  const tryGameFile = path.join(romDir, ...order);
-  if (fs.existsSync(tryGameFile)) {
-    gameFile = tryGameFile;
-    break;
+
+// Issue #9: Check package.json main FIRST
+if (fs.existsSync(path.join(romDir, 'package.json'))) {
+  const packjson = JSON.parse(fs.readFileSync(path.join(romDir, 'package.json'), 'utf8'));
+  
+  // Issue #31: Auto npm install if dependencies exist but node_modules missing
+  if (packjson.dependencies && !fs.existsSync(path.join(romDir, 'node_modules'))) {
+    console.log('Dependencies found but node_modules missing, running npm install...');
+    const { execSync } = await import('child_process');
+    try {
+      execSync('npm install', { cwd: romDir, stdio: 'inherit' });
+      console.log('npm install completed');
+    } catch (err) {
+      console.error('npm install failed:', err.message);
+    }
   }
-}
-if (!gameFile) {
-  // no game file found, try package.json
-  if (fs.existsSync(path.join(romDir, 'package.json'))) {
-    const packjson = JSON.parse(fs.readFileSync(path.join(romDir, 'package.json'), 'utf8'));
-    // console.log('packjson', packjson);
-    if (packjson.main) {
-      gameFile = path.join(romDir, packjson.main);
-      if (!fs.existsSync(gameFile)) {
-        console.error(gameFile, 'package.json main file not found');
-        process.exit(1);
-      } 
-    } else {
-      console.error('no main entry in package.json');
+  
+  if (packjson.main) {
+    gameFile = path.join(romDir, packjson.main);
+    if (!fs.existsSync(gameFile)) {
+      console.error(gameFile, 'package.json main file not found');
       process.exit(1);
     }
-  } else {
-    console.error('game file not found');
-    process.exit(1);
+  }
+}
+
+// Fallback to file order if no package.json main
+if (!gameFile) {
+  const tryOrder = [
+    ['main.js'],
+    ['src', 'main.js'],
+    ['index.js'],
+    ['src', 'index.js'],
+    ['game.js'],
+    ['src', 'game.js'],
+  ]
+  for (const order of tryOrder) {
+    const tryGameFile = path.join(romDir, ...order);
+    if (fs.existsSync(tryGameFile)) {
+      gameFile = tryGameFile;
+      break;
+    }
+  }
+}
+
+if (!gameFile) {
+  console.error('game file not found');
+  process.exit(1);
+}
   }
 }
 
