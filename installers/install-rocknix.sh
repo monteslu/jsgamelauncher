@@ -25,8 +25,22 @@ my_distro_check() {
 # during the execution of the install script
 #
 my_reset() {
-  unset -f my_has my_echo my_distro_check
+  unset -f my_has my_echo my_distro_check my_verify_node
 }
+
+# Verify Node.js is working
+my_verify_node() {
+  source ~/.bash_profile
+  if command -v node &> /dev/null; then
+    NODE_VERSION=$(node --version 2>/dev/null)
+    if [ $? -eq 0 ]; then
+      my_echo "=> Node.js $NODE_VERSION is working correctly"
+      return 0
+    fi
+  fi
+  return 1
+}
+
 my_echo "=> STARTING INSTALL"
 
 if [ -z "${BASH_VERSION}" ] || [ -n "${ZSH_VERSION}" ]; then
@@ -132,7 +146,27 @@ if my_distro_check; then
   nvm use 22
   cd ~/jsgamelauncher
   npm install
-  my_echo "=> INSTALL SUCCESSFUL!"
+  
+  # Verify installation
+  my_echo ""
+  my_echo "=> Verifying installation..."
+  if my_verify_node; then
+    my_echo "=> INSTALL SUCCESSFUL!"
+    my_echo ""
+    my_echo "=> Next steps:"
+    my_echo "   1. Reboot your device (recommended)"
+    my_echo "   2. Add games to /roms/jsgames"
+    my_echo "   3. Refresh your game list in EmulationStation"
+  else
+    my_echo "=> WARNING: Node.js verification failed!"
+    my_echo ""
+    my_echo "=> Troubleshooting:"
+    my_echo "   1. Try rebooting and running the installer again"
+    my_echo "   2. Check that your device has enough storage space"
+    my_echo "   3. Try running: source ~/.bash_profile && node --version"
+    my_echo ""
+    my_echo "=> If games don't launch, check /roms/jsgames/.jsgamelauncher.log for errors"
+  fi
   cd ~
 else
   my_echo "=> my_distro_check says this is NOT is a compatible device for this installer, so I'm not moving files around!"
