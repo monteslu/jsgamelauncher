@@ -1,0 +1,237 @@
+# jsgamelauncher
+
+> A compatibility layer for JavaScript games to run WITHOUT a browser or electron using standard web APIs. Games run on cheap retro devices ($50 handhelds) AND in browsers without any changes.
+
+## Quick Start
+
+Clone the starter: https://github.com/monteslu/simple-jsgame-starter
+
+```bash
+npm install
+npm run dev
+```
+
+## Supported Web APIs
+
+- ✅ Canvas 2D (`canvas.getContext("2d")`)
+- ✅ WebAudio
+- ✅ Keyboard events
+- ✅ Gamepad API
+- ✅ FontFace
+- ✅ LocalStorage
+- ✅ Web Assembly (WASM)
+- ✅ Web Workers
+- ✅ WebSockets
+- ❌ WebGL / Canvas 3D (NOT supported)
+- ❌ CSS changes (won't work on devices)
+- ❌ HTML DOM manipulation (canvas only)
+
+## Critical Constraints
+
+1. **Canvas only**: All rendering must use the 2D canvas API. No WebGL, no DOM manipulation.
+2. **No CSS effects**: CSS changes won't apply when running on retro devices.
+3. **Gamepad-first**: Design for gamepad input. Keyboards are unavailable on retro devices.
+4. **Fixed resolution**: Use a fixed canvas size (e.g., 640x480). The launcher handles scaling.
+
+## Required Files
+
+```
+my-game/
+├── package.json          # type: "module" recommended
+├── my-game.jsg           # Empty file, names game for EmulationStation
+├── index.html            # Must include <canvas id="game-canvas">
+└── src/
+    ├── main.js           # Entry point
+    └── utils.js          # Input abstraction (recommended)
+```
+
+### package.json
+
+```json
+{
+  "name": "my-game",
+  "type": "module",
+  "scripts": {
+    "dev": "vite"
+  }
+}
+```
+
+### index.html
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>My Game</title>
+</head>
+<body>
+  <canvas id="game-canvas" width="640" height="480"></canvas>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
+```
+
+## Basic Game Loop Pattern
+
+```javascript
+const canvas = document.getElementById("game-canvas");
+const ctx = canvas.getContext("2d");
+
+let lastTime = performance.now();
+
+function update(deltaTime) {
+  // Update game state
+  // Check input
+  // Play sounds
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // Draw everything
+}
+
+function gameLoop(time) {
+  const deltaTime = time - lastTime;
+  lastTime = time;
+  update(deltaTime);
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop(performance.now());
+```
+
+## Input Handling
+
+Use the utils.js abstraction for keyboard fallback when no gamepad:
+
+```javascript
+// src/utils.js - from simple-jsgame-starter
+export function getInput() {
+  const gamepads = navigator.getGamepads();
+  // Returns normalized input objects
+  // Falls back to keyboard: Arrow keys = DPAD, Z = BUTTON_SOUTH, X = BUTTON_EAST
+}
+```
+
+```javascript
+// src/main.js
+import { getInput } from "./utils.js";
+
+function update(deltaTime) {
+  const [player1] = getInput();
+  
+  if (player1.DPAD_UP.pressed) {
+    // Move up
+  }
+  if (player1.BUTTON_SOUTH.pressed) {
+    // Action button (Z key on keyboard, B on Nintendo, A on Xbox)
+  }
+}
+```
+
+### Standard Button Mapping
+
+- `DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT` — Arrow keys fallback
+- `BUTTON_SOUTH` — Z key (A/B depending on controller)
+- `BUTTON_EAST` — X key
+- `BUTTON_NORTH`, `BUTTON_WEST` — Additional face buttons
+- `LEFT_SHOULDER`, `RIGHT_SHOULDER` — Bumpers
+- `START`, `SELECT` — Menu buttons
+
+## Drawing Examples
+
+### Basic Shapes
+
+```javascript
+// Rectangle
+ctx.fillStyle = "#ff0000";
+ctx.fillRect(x, y, width, height);
+
+// Circle
+ctx.beginPath();
+ctx.arc(x, y, radius, 0, Math.PI * 2);
+ctx.fillStyle = "#00ff00";
+ctx.fill();
+
+// Line
+ctx.beginPath();
+ctx.moveTo(x1, y1);
+ctx.lineTo(x2, y2);
+ctx.strokeStyle = "#0000ff";
+ctx.stroke();
+```
+
+### Images/Sprites
+
+```javascript
+const sprite = new Image();
+sprite.src = "./assets/player.png";
+sprite.onload = () => {
+  // Image ready
+};
+
+// In render:
+ctx.drawImage(sprite, x, y);
+ctx.drawImage(sprite, x, y, width, height); // Scaled
+ctx.drawImage(sprite, sx, sy, sw, sh, dx, dy, dw, dh); // Sprite sheet
+```
+
+### Text
+
+```javascript
+ctx.font = "24px monospace";
+ctx.fillStyle = "#ffffff";
+ctx.fillText("Score: 100", 10, 30);
+```
+
+## Audio
+
+```javascript
+const audioCtx = new AudioContext();
+
+async function playSound(url) {
+  const response = await fetch(url);
+  const arrayBuffer = await response.arrayBuffer();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  const source = audioCtx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(audioCtx.destination);
+  source.start();
+}
+```
+
+## Example Games
+
+See https://github.com/monteslu/jsgames for complete examples:
+
+- `space-invaders-ai` — Classic arcade shooter
+- `tetris-ai` — Falling blocks puzzle
+- `simple-vite` — Minimal starter with Vite
+- `adventure-ai` — Top-down adventure
+
+## Running Without Browser
+
+```bash
+npx rungame ./my-game.jsg
+```
+
+## Common Mistakes to Avoid
+
+1. ❌ Using WebGL or Three.js — not supported
+2. ❌ Modifying CSS or DOM elements — won't work on devices
+3. ❌ Assuming keyboard input — always support gamepad
+4. ❌ Using `window.innerWidth` — use fixed canvas dimensions
+5. ❌ External CDN scripts — bundle dependencies locally
+
+## Deploying to Retro Devices
+
+1. Copy game folder to `/roms/jsgames/` on device
+2. Include the `.jsg` file (can be empty)
+3. Run `npm install` on device if you have dependencies
+4. Update games list in EmulationStation
+
+---
+
+More info: https://github.com/monteslu/jsgamelauncher
