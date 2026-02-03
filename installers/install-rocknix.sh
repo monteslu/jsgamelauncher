@@ -7,16 +7,17 @@ my_has() {
   type "$1" > /dev/null 2>&1
 }
 
-my_distro_check() {
-  if [ -f "/usr/bin/rocknix-config.sh" ]; then
-    return 0  # True
-  else 
-    return 1  # False
-  fi
-}
-
 my_echo() {
   command printf %s\\n "$*" 2>/dev/null
+}
+
+# Check for ROCKNIX - handles both possible config file locations
+my_distro_check() {
+  if [ -f "/usr/bin/rocknix-config" ] || [ -f "/usr/bin/rocknix-config.sh" ]; then
+    return 0  # True - this is ROCKNIX
+  else 
+    return 1  # False - not ROCKNIX
+  fi
 }
 
 #
@@ -35,15 +36,6 @@ fi
 
 my_grep() {
   GREP_OPTIONS='' command grep "$@"
-}
-
-# check to see if I'm running on a knulli/batocera device
-my_distro_check() {
-  if [ -f "/usr/bin/rocknix-config" ]; then
-    return 0  # True
-  else
-    return 1  # False
-  fi
 }
 
 # NVM can't update the .bash_profile if one doesn't exist
@@ -144,6 +136,7 @@ if my_distro_check; then
   cd ~
 else
   my_echo "=> my_distro_check says this is NOT is a compatible device for this installer, so I'm not moving files around!"
+  my_echo "=> Checked for /usr/bin/rocknix-config and /usr/bin/rocknix-config.sh but neither was found."
   my_echo "=> INSTALL FAILED!"
 fi
 
