@@ -8,9 +8,15 @@ globalThis.oldFetch = fetch;
 export default function createFetch(gameDir) {
   let resourcePath = gameDir;
   // Check if gameDir has a public/ folder in it
-  const publicDir = path.join(gameDir, 'public');
+  let publicDir = path.join(gameDir, 'public');
   if (fs.existsSync(publicDir)) {
     resourcePath = publicDir;
+  } else {
+    // check parent directory for public folder (for projects with src/ structure)
+    publicDir = path.join(gameDir, '..', 'public');
+    if (fs.existsSync(publicDir)) {
+      resourcePath = publicDir;
+    }
   }
 
   // console.log('resourcePath', resourcePath);

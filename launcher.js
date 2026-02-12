@@ -6,12 +6,12 @@ import nrsc, { ImageData } from '@napi-rs/canvas';
 import Worker from 'web-worker';
 import WebSocket from 'ws';
 import getOptions from './options.js';
-import { initGamepads } from './gamepads.js';
+import { installNavigatorShim } from 'gamepad-node';
 import { createCanvas, OffscreenCanvas } from './canvas.js';
 import { createImageClass, createLoadImage } from './image.js';
 import createLocalStorage from './localstorage.js';
 import initializeEvents from './events.js';
-import { AudioContext, AudioDestinationNode, OscillatorNode, GainNode, AudioBuffer } from 'webaudio-node';
+import { AudioContext, OfflineAudioContext, AudioBuffer } from 'webaudio-node';
 import createFetch from './fetch.js';
 import createXMLHttpRequest from './xhr.js';
 import { createObjectURL, revokeObjectURL, fetchBlobFromUrl } from './blob.js';
@@ -147,9 +147,7 @@ globalThis.document = document;
 globalThis.screen = {};
 // web audio
 globalThis.AudioContext = AudioContext;
-globalThis.AudioDestinationNode = AudioDestinationNode;
-globalThis.OscillatorNode = OscillatorNode;
-globalThis.GainNode = GainNode;
+globalThis.OfflineAudioContext = OfflineAudioContext;
 globalThis.AudioBuffer = AudioBuffer;
 
 globalThis.sdl = sdl;
@@ -300,8 +298,11 @@ const resize = () => {
     const canvasRatio = canvas.width / canvas.height;
     aspectRatioDifference = Math.abs(windowRatio - canvasRatio);
     if (canvasAutoResize) {
-      canvas.width = pixelWidth;
-      canvas.height = pixelHeight;
+      // Only resize if dimensions actually changed (setting width/height clears canvas!)
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth;
+        canvas.height = pixelHeight;
+      }
     }
   }
   globalThis.innerWidth = pixelWidth;
@@ -332,6 +333,10 @@ async function main() {
   console.log('fullscreen', fullscreen, 'showFPS', showFPS, 'integerScaling', integerScaling);
   appWindow = sdl.video.createWindow({ resizable: true, fullscreen });
   console.log('appWindow CREATED', appWindow.pixelWidth, appWindow.pixelHeight);
+
+  // Initialize gamepad support
+  installNavigatorShim();
+  console.log('starting launcher loop', navigator);
   
   await new Promise((resolve) => {
     setTimeout(() => {
@@ -396,6 +401,11 @@ async function main() {
   lastTime = performance.now(); // Track the last frame's time
 
   async function launcherDraw() {
+    // Sync WebGL framebuffer if game is using WebGL
+    if (canvas._isWebGL && canvas._syncGL) {
+      canvas._syncGL();
+    }
+
     const canvasRatio = canvas.width / canvas.height;
     let drawX,drawY,drawWidth,drawHeight;
 
@@ -509,7 +519,6 @@ async function main() {
     setImmediate(launcherLoop);
   }
   
-  await initGamepads(options.Addconcfg);
   launcherLoop();
 
   // Log the FPS (frames per second)
