@@ -68,7 +68,7 @@ export function createImageClass(gamePath) {
               fs.mkdirSync(blobDir, { recursive: true });
             }
             tempBlobFile = path.join(blobDir, randomUUID() + '.png');
-            fs.writeFileSync(tempBlobFile, blob);
+            fs.writeFileSync(tempBlobFile, blob instanceof ArrayBuffer ? Buffer.from(blob) : blob);
             finalUrl = tempBlobFile;
           }
         }
