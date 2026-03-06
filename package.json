@@ -1,7 +1,7 @@
 {
   "name": "rungame",
   "description": "A simple non-browser game launcher for web games",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -18,6 +18,9 @@
   "keywords": [],
   "author": "Luis Montes",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "dependencies": {
     "@kmamal/sdl": "^0.11.13",
     "@napi-rs/canvas": "^0.1.96",
