@@ -1,12 +1,55 @@
 import { createCanvas as npcc } from '@napi-rs/canvas';
+import { createWebGL2Context } from 'webgl-node';
+
+// Shared display GL context set by launcher
+let _displayGl = null;
+let _displaySwapBuffers = null;
+let _onWebGLCanvas = null;
+export function setDisplayContext(gl, swapBuffers) {
+  _displayGl = gl;
+  _displaySwapBuffers = swapBuffers;
+}
+export function onWebGLCanvas(cb) {
+  _onWebGLCanvas = cb;
+}
 
 export function createCanvas(width, height) {
   const canvas = npcc(width, height);
   const baseGetContext = canvas.getContext.bind(canvas);
   let ctx;
+  let glCtx;
   canvas.style = {};
-  canvas.getContext = function getContext(type) {
-    // TODO handle webgl
+  if (!canvas.addEventListener) {
+    const _listeners = {};
+    canvas.addEventListener = (type, fn, opts) => {
+      console.log('canvas.addEventListener', type, Object.keys(opts || {}));
+      (_listeners[type] = _listeners[type] || []).push(fn);
+    };
+    canvas.removeEventListener = (type, fn) => {
+      if (_listeners[type]) _listeners[type] = _listeners[type].filter(f => f !== fn);
+    };
+  }
+  canvas._isWebGL = false;
+  canvas._swapBuffers = null;
+  canvas.getContext = function getContext(type, attrs) {
+    if (type === 'webgl2' || type === 'webgl' || type === 'experimental-webgl') {
+      if (!glCtx) {
+        if (_displayGl) {
+          // Reuse the display GL context (window surface — zero copy)
+          glCtx = _displayGl;
+          canvas._swapBuffers = _displaySwapBuffers;
+        } else {
+          // Fallback: create a pbuffer context (headless/CI)
+          const result = createWebGL2Context(width, height, attrs);
+          glCtx = result.gl;
+        }
+        glCtx.canvas = canvas;
+        canvas._isWebGL = true;
+        canvas._glCtx = glCtx;
+        if (_onWebGLCanvas) _onWebGLCanvas(canvas);
+      }
+      return glCtx;
+    }
     if (!ctx) {
       ctx = baseGetContext(type);
       const baseDrawImage = ctx.drawImage.bind(ctx);
@@ -30,7 +73,7 @@ export function createCanvas(width, height) {
         }
       };
     }
-    
+
     return ctx;
   }
   canvas.getBoundingClientRect = () => {

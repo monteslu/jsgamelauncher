@@ -20,7 +20,7 @@ Right now we have support for anything that runs [Knulli](https://knulli.org/) a
 - [x] Web Workers
 - [x] WebSockets
 - [ ] Peer Connection
-- [ ] WebGL (Canvas 3D)
+- [x] WebGL (Canvas 3D)
 
 ## Game making guidelines
 
@@ -33,8 +33,7 @@ Right now we have support for anything that runs [Knulli](https://knulli.org/) a
 ## JS Game Engine support
 
 - [Phaser](https://phaser.io/)
-
-3D effects are not supported, but you can use the canvas API to draw 3D graphics.
+- [Three.js](https://threejs.org/)
 
 Other engines might work, we just haven't tried them!
 
