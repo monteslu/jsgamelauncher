@@ -208,7 +208,7 @@ if (fs.existsSync(path.join(romDir, 'package.json'))) {
     console.log('Dependencies found but node_modules missing, running npm install...');
     const { execSync } = await import('child_process');
     try {
-      execSync('npm install', { cwd: romDir, stdio: 'inherit' });
+      execSync('npm install --omit=dev', { cwd: romDir, stdio: 'inherit' });
       console.log('npm install completed');
     } catch (err) {
       console.error('npm install failed:', err.message);
