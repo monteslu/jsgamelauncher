@@ -14,7 +14,7 @@ Right now we have support for anything that runs [Knulli](https://knulli.org/) a
 - [x] WebAudio
 - [x] Keyboard events
 - [x] Gamepad API
-- [x] FontFace 
+- [x] FontFace
 - [x] LocalStorage
 - [x] Web Assembly (WASM)
 - [x] Web Workers
@@ -48,7 +48,7 @@ Other engines might work, we just haven't tried them!
 - use at least node 22
 - clone this repo, cd to this directory
 - npm install
-- `node index ./path/to/game.js` 
+- `node index ./path/to/game.js`
 - OR `npm link` . . . then `rungame ./gamename.jsg`
 - (clone sample game at https://github.com/monteslu/jsgames/tree/main/simple-vite or find other games at https://github.com/monteslu/jsgames)
 
@@ -69,6 +69,8 @@ For now we only support downloading the latest version of jsgamelaucher. At some
 - That's it! Update the games list! Now you need a [game](https://github.com/monteslu/jsgames)! Just put that in `/userdata/roms/jsgames` if you are using the default setup. All you need is a `game.js` file as a starting point and a file called "&lt;game name&gt;.jsg". This could change!
 
 ## Installing on [ROCKNIX](https://rocknix.org/)
+
+NOTE: There is the [black screen issue](https://github.com/monteslu/jsgamelauncher/issues/74) on some ROCKNIX devices while using `LIBMALI` GPU driver. You can switch driver to `PANFORST` in `Main menu -> System settings -> Performance -> GPU driver`.
 
 ### Use the install script [(src)](https://github.com/monteslu/jsgamelauncher/blob/main/installers/install-rocknix.sh)!
 
