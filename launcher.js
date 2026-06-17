@@ -19,6 +19,7 @@ import { createObjectURL, revokeObjectURL, fetchBlobFromUrl } from './blob.js';
 import { Audio } from './audio.js';
 import { Video } from './video.js';
 import initializeFontFace from './fontface.js';
+import { createRealm } from './realm.js';
 
 
 process.on('uncaughtException', (err) => {
@@ -560,7 +561,43 @@ async function main() {
     fullGamefile = 'file://' + path.join(process.cwd(), gameFile);
   }
   console.log('fullGamefile path', fullGamefile);
-  await import(fullGamefile);
+
+  // Run the game in an isolated BROWSER realm (no process/require/fs reachable by
+  // game code) instead of the main Node scope. The shims above are passed in as
+  // host intrinsics; the SDL window + this frame loop stay in the main realm and
+  // drive the realm's display canvas / rAF / gamepad (they read the same
+  // globalThis.* references). See realm.js.
+  const realmGlobals = {
+    HTMLCanvasElement: globalThis.HTMLCanvasElement,
+    ImageData, OffscreenCanvas,
+    Audio: globalThis.Audio, Video: globalThis.Video,
+    Worker: globalThis.Worker, WebSocket: globalThis.WebSocket,
+    MutationObserver: globalThis.MutationObserver,
+    document: globalThis.document, screen: globalThis.screen,
+    AudioContext: globalThis.AudioContext, AudioDestinationNode: globalThis.AudioDestinationNode,
+    OscillatorNode: globalThis.OscillatorNode, GainNode: globalThis.GainNode, AudioBuffer: globalThis.AudioBuffer,
+    WebGLRenderingContext: globalThis.WebGLRenderingContext, WebGL2RenderingContext: globalThis.WebGL2RenderingContext,
+    requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    requestIdleCallback: (cb) => setTimeout(() => cb({ timeRemaining: () => 10 }), 0),
+    cancelIdleCallback: clearTimeout,
+    loadImage: globalThis.loadImage, Image: globalThis.Image,
+    fetch: globalThis.fetch, XMLHttpRequest: globalThis.XMLHttpRequest,
+    localStorage: globalThis.localStorage, FontFace: globalThis.FontFace,
+    navigator: globalThis.navigator,
+    innerWidth: globalThis.innerWidth, innerHeight: globalThis.innerHeight,
+    devicePixelRatio: 1,
+    sdl: globalThis.sdl,
+    alert: (msg) => console.log('alert:', msg),
+    // window-level event listeners (keydown/keyup wired by events.js to SDL);
+    // games do window.addEventListener('keydown', …). document.addEventListener
+    // is already on the document object we pass in.
+    addEventListener: globalThis.addEventListener,
+    removeEventListener: globalThis.removeEventListener,
+    dispatchEvent: globalThis.dispatchEvent || (() => true),
+    close: globalThis.close || (() => {}),
+  };
+  const realm = createRealm({ globals: realmGlobals, gameRoot: romDir });
+  await realm.runEntry(fullGamefile);
   resize();
   eventHandlers.callLoadingEvents();
 
