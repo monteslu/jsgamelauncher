@@ -40,20 +40,41 @@ Other engines might work, we just haven't tried them!
 ## Running on a desktop OS (Mac, Linux, even Windows!)
 
 ### Quickstart
- - use node 22, change to a game directory
- - Make a game.js file and a gamename.jsg file
- - `npx rungame -rom ./gamename.jsg`
+ - use node 22+
+ - clone a starter: https://github.com/monteslu/simple-jsgame-starter (2D) or
+   https://github.com/monteslu/simple-threejs-game-starter (3D)
+ - point rungame at the game **directory** (no marker file needed):
+   `npx rungame ./my-game`
+
+A game can be launched three ways:
+ - a **directory** — `rungame ./my-game` (the folder is the game)
+ - a **`.jsg` marker** file inside it — `rungame ./my-game/game.jsg` (this is how
+   EmulationStation / ES-DE / Batocera list it: launchers scan by file extension,
+   so the marker gives them one entry per game; it's just an empty pointer file)
+ - a **`.jsgame`** zip — `rungame ./my-game.jsgame` (a bundled, shareable build)
+
+`package.json` and the `.jsg` marker are both optional — a folder with a `main.js`
+runs with neither (entry falls back to `main.js` / `src/main.js` / …).
 
 ### For contributors!
 - use at least node 22
 - clone this repo, cd to this directory
 - npm install
-- `node index ./path/to/game.js` 
-- OR `npm link` . . . then `rungame ./gamename.jsg`
-- (clone sample game at https://github.com/monteslu/jsgames/tree/main/simple-vite or find other games at https://github.com/monteslu/jsgames)
+- `rungame ./path/to/my-game` (or `npm link` then `rungame …`)
+- (clone a sample game at https://github.com/monteslu/jsgames/tree/main/simple-vite or find others at https://github.com/monteslu/jsgames)
 
-### Use the web
-You can also just run the game directly without using jsgamelauncher. The goal is to make web games that also work on a low end device but the web is a first class citizen. Check out the [Simple Vite](https://github.com/monteslu/jsgames/tree/main/simple-vite) example. Most examples will run on the web with `npm run dev`.
+### Develop in the browser, no build step needed
+The web is a first-class target: most examples run with `npm run dev` (vite, hot
+reload) in a browser. Run that same game directory in jsgamelauncher with no build
+step — `node_modules` are resolved, so `import 'three'` works directly. (For a
+distributable `.jsgame`, `npm run build` first.) See the
+[Simple Vite](https://github.com/monteslu/jsgames/tree/main/simple-vite) example.
+
+### Security
+Games run in an isolated browser sandbox (a `node:vm` realm): game code sees only
+browser APIs and **no `process` / `require` / `fs`** — a game can't read your
+files or run shell commands, just like a browser tab. Threaded WebAssembly still
+works. See [docs/SECURITY.md](./docs/SECURITY.md).
 
 ## Notes on Installing to a device
 

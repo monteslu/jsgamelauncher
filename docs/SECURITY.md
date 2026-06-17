@@ -66,17 +66,21 @@ Expected: `process=undefined require=undefined global=undefined __dirname=undefi
 + `fs blocked`. And `typeof Worker === 'function'`, `typeof SharedArrayBuffer ===
 'function'` (so threads still work).
 
-## Behavior changes vs the old full-Node model (the cost)
+## Behavior changes — NOT breaking for real games
 
-- **`--experimental-vm-modules` is required** (cli.js re-execs node with it) —
-  `vm.SourceTextModule` needs it.
-- **Bare specifiers in games are now a HARD ERROR.** A game that relied on
-  jsgamelauncher resolving an UNBUNDLED `import 'three'` from `node_modules` will
-  fail — games must be **bundled** (the simple-*-starter + vite path already
-  bundles). This also makes the auto-`npm install` + `Module.globalPaths`
-  machinery moot for game code (revisit / remove).
-- Game code can no longer `require`/`import` Node builtins or do fs/network beyond
-  the browser `fetch` (game-root-scoped).
+No real browser game uses `fs`/`process`/Node builtins, so removing them breaks
+nothing that should exist. The notes below are the only differences:
+
+- **`--experimental-vm-modules` is required** — but `cli.js` auto-applies it (it
+  re-execs node with the flag), so this is invisible to users.
+- **`node_modules` still resolves.** Unbundled `import 'three'` works in dev with
+  no build step — the realm resolves bare specifiers against the game's
+  `node_modules`. (Bundled games work too.) So the normal dev loop is unchanged.
+- **Node builtins are blocked.** `import 'fs'` / `import 'child_process'` (and the
+  globals `process`/`require`/`fs`) hard-error. The only "casualty" is a
+  non-portable hack like `process.exit()` — which never worked in a browser
+  either, so it's a correctness fix, not a regression. (A correctly-guarded
+  `typeof process !== 'undefined'` check just no-ops, as it should.)
 
 ## Threat model
 
