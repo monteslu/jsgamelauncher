@@ -19,6 +19,7 @@ import { createObjectURL, revokeObjectURL, fetchBlobFromUrl } from './blob.js';
 import { Audio } from './audio.js';
 import { Video } from './video.js';
 import initializeFontFace from './fontface.js';
+import { createRealm } from './realm.js';
 
 
 process.on('uncaughtException', (err) => {
@@ -35,6 +36,55 @@ process.on('uncaughtException', (err) => {
   // Perform cleanup or logging here
   process.exit(1); // Optional: Exit the process gracefully
 });
+
+// Extract a .jsgame/.zip archive to a real on-disk dir and return its path.
+// Content-addressed (a hash of the zip) so re-runs reuse it; pruned to a few
+// most-recently-used so a temp dir doesn't grow unbounded. A real on-disk root
+// is needed so the realm can load modules + emscripten wasm pthread worker URLs
+// resolve. (Same approach as jsgame-libretro's content.js.)
+async function extractGameArchive(archivePath) {
+  const os = await import('node:os');
+  const crypto = await import('node:crypto');
+  const { unzipSync } = await import('fflate');
+  const raw = fs.readFileSync(archivePath);
+  const files = unzipSync(raw);
+  // tolerate a single top-level folder wrapping the game tree
+  const names = Object.keys(files).filter((n) => !n.endsWith('/'));
+  let prefix = '';
+  if (names.length > 0) {
+    const first = names[0].split('/')[0] + '/';
+    if (names.every((n) => n.startsWith(first))) prefix = first;
+  }
+  const PREFIX = 'jsgamelauncher-content-';
+  const hash = crypto.createHash('sha1').update(raw).digest('hex').slice(0, 16);
+  const dir = path.join(os.tmpdir(), PREFIX + hash);
+  const stamp = path.join(dir, '.extracted');
+  if (!fs.existsSync(stamp)) {
+    // prune old extractions (keep ~6 most-recently-used)
+    try {
+      const KEEP = 6;
+      const dirs = fs.readdirSync(os.tmpdir())
+        .filter((n) => n.startsWith(PREFIX))
+        .map((n) => { const p = path.join(os.tmpdir(), n); let mt = 0; try { mt = fs.statSync(p).mtimeMs; } catch {} return { p, mt }; })
+        .sort((a, b) => b.mt - a.mt);
+      for (const { p } of dirs.slice(KEEP)) { try { fs.rmSync(p, { recursive: true, force: true }); } catch {} }
+    } catch {}
+    for (const [name, data] of Object.entries(files)) {
+      if (name.endsWith('/')) continue;
+      const rel = prefix && name.startsWith(prefix) ? name.slice(prefix.length) : name;
+      if (!rel) continue;
+      const dst = path.join(dir, rel);
+      if (!path.resolve(dst).startsWith(path.resolve(dir))) continue; // zip-slip guard
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.writeFileSync(dst, Buffer.from(data.buffer, data.byteOffset, data.byteLength));
+    }
+    fs.writeFileSync(stamp, '');
+  } else {
+    try { fs.utimesSync(dir, new Date(), new Date()); } catch {}
+  }
+  console.log('extracted', archivePath, '->', dir);
+  return dir;
+}
 
 globalThis.global = globalThis;
 globalThis.self = globalThis;
@@ -195,7 +245,18 @@ if (!fs.existsSync(romFile)) {
   console.error('rom file not found', romFile);
   process.exit(1);
 }
-const romDir = path.dirname(romFile);
+// Accept THREE forms: a game directory, a marker file inside it (e.g. game.jsg),
+// or a .jsgame/.zip archive (extracted to a temp dir, like jsgame-libretro).
+let romDir;
+const lc = romFile.toLowerCase();
+if (fs.statSync(romFile).isDirectory()) {
+  romDir = romFile;
+} else if (lc.endsWith('.jsgame') || lc.endsWith('.zip')) {
+  romDir = await extractGameArchive(romFile);
+} else {
+  // a file inside the game dir (the .jsg marker, or any entry) → its dir
+  romDir = path.dirname(romFile);
+}
 console.log('romFile', romFile, 'romDir', romDir);
 let gameFile;
 
@@ -560,7 +621,43 @@ async function main() {
     fullGamefile = 'file://' + path.join(process.cwd(), gameFile);
   }
   console.log('fullGamefile path', fullGamefile);
-  await import(fullGamefile);
+
+  // Run the game in an isolated BROWSER realm (no process/require/fs reachable by
+  // game code) instead of the main Node scope. The shims above are passed in as
+  // host intrinsics; the SDL window + this frame loop stay in the main realm and
+  // drive the realm's display canvas / rAF / gamepad (they read the same
+  // globalThis.* references). See realm.js.
+  const realmGlobals = {
+    HTMLCanvasElement: globalThis.HTMLCanvasElement,
+    ImageData, OffscreenCanvas,
+    Audio: globalThis.Audio, Video: globalThis.Video,
+    Worker: globalThis.Worker, WebSocket: globalThis.WebSocket,
+    MutationObserver: globalThis.MutationObserver,
+    document: globalThis.document, screen: globalThis.screen,
+    AudioContext: globalThis.AudioContext, AudioDestinationNode: globalThis.AudioDestinationNode,
+    OscillatorNode: globalThis.OscillatorNode, GainNode: globalThis.GainNode, AudioBuffer: globalThis.AudioBuffer,
+    WebGLRenderingContext: globalThis.WebGLRenderingContext, WebGL2RenderingContext: globalThis.WebGL2RenderingContext,
+    requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    requestIdleCallback: (cb) => setTimeout(() => cb({ timeRemaining: () => 10 }), 0),
+    cancelIdleCallback: clearTimeout,
+    loadImage: globalThis.loadImage, Image: globalThis.Image,
+    fetch: globalThis.fetch, XMLHttpRequest: globalThis.XMLHttpRequest,
+    localStorage: globalThis.localStorage, FontFace: globalThis.FontFace,
+    navigator: globalThis.navigator,
+    innerWidth: globalThis.innerWidth, innerHeight: globalThis.innerHeight,
+    devicePixelRatio: 1,
+    sdl: globalThis.sdl,
+    alert: (msg) => console.log('alert:', msg),
+    // window-level event listeners (keydown/keyup wired by events.js to SDL);
+    // games do window.addEventListener('keydown', …). document.addEventListener
+    // is already on the document object we pass in.
+    addEventListener: globalThis.addEventListener,
+    removeEventListener: globalThis.removeEventListener,
+    dispatchEvent: globalThis.dispatchEvent || (() => true),
+    close: globalThis.close || (() => {}),
+  };
+  const realm = createRealm({ globals: realmGlobals, gameRoot: romDir });
+  await realm.runEntry(fullGamefile);
   resize();
   eventHandlers.callLoadingEvents();
 
