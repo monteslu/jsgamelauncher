@@ -13,6 +13,7 @@
 import vm from 'node:vm';
 import { Worker as NodeWorker } from 'node:worker_threads';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, normalize as pnormalize } from 'node:path';
 
@@ -117,17 +118,39 @@ export function createRealm({ globals, gameRoot }) {
   // game is a real built bundle on disk, so import.meta.url is a real file://
   // (emscripten wasm pthread worker URLs resolve against it).
   const moduleCache = new Map();
+  // A require scoped to the game dir, used ONLY to RESOLVE module paths (bare
+  // specifiers → node_modules), never handed to game code. Resolving a path and
+  // loading that file into the sandboxed vm context does NOT give the game
+  // fs/process — the resolved library runs in the same no-process/fs context.
+  // So node_modules works (unbundled `import 'three'` in dev) AND the sandbox
+  // holds. `node:` builtins stay blocked (those WOULD be a Node escape).
   function resolveSpec(spec, fromPath) {
     if (spec.startsWith('node:')) {
-      throw new Error(`node builtin "${spec}" is not available in the game realm (bundle your game)`);
+      throw new Error(`node builtin "${spec}" is not available in the game realm (it's a browser sandbox)`);
     }
-    if (!spec.startsWith('.') && !spec.startsWith('/') && !spec.startsWith('file:')) {
-      throw new Error(`bare specifier "${spec}" is not available in the game realm (bundle your game)`);
+    // relative / absolute / file:// — resolve directly
+    if (spec.startsWith('.') || spec.startsWith('/') || spec.startsWith('file:')) {
+      let p = spec.startsWith('file:') ? fileURLToPath(spec) : spec;
+      if (p.startsWith('.')) p = join(dirname(fromPath), p);
+      return pnormalize(p);
     }
-    let p = spec.startsWith('file:') ? fileURLToPath(spec) : spec;
-    if (p.startsWith('.')) p = join(dirname(fromPath), p);
-    p = pnormalize(p);
-    return p;
+    // bare specifier — resolve against the game's node_modules (works in dev,
+    // no build step). A specifier that resolves to a node builtin (a lib doing
+    // `import 'fs'`) throws the same "not available" error a browser would give.
+    try {
+      const fromRequire = createRequire(fromPath);
+      const resolved = fromRequire.resolve(spec);
+      if (!resolved.includes('/') && !resolved.includes('\\')) {
+        // node builtin (e.g. 'fs') resolves to its bare name
+        throw new Error(`node builtin "${spec}" is not available in the game realm`);
+      }
+      return pnormalize(resolved);
+    } catch (e) {
+      if (e.code === 'MODULE_NOT_FOUND') {
+        throw new Error(`module "${spec}" not found in the game's node_modules (run npm install, or bundle your game)`);
+      }
+      throw e;
+    }
   }
   function loadModule(absPath) {
     if (moduleCache.has(absPath)) return moduleCache.get(absPath);
