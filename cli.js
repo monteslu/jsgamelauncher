@@ -28,7 +28,13 @@ if (debugMode) {
   inspector.default.open(9229, 'localhost', true);
 }
 
-const { default: launcher } = await import('./launcher.js');
+const { launch } = await import('./launcher.js');
+const { default: getOptions } = await import('./options.js');
+
+// Parse argv (commander) into the CLI-shaped options, then launch. launch()
+// accepts the CLI-cased keys (Fullscreen, Showfps, …) directly, so we pass the
+// rest of the options object straight through.
+const { Rom, ...opts } = getOptions();
 
 // Launch the game
-launcher();
+launch(Rom, opts);

@@ -1,8 +1,11 @@
 {
   "name": "rungame",
   "description": "A simple non-browser game launcher for web games",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "create-controller-db": "node controllers/create_db.js"

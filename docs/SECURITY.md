@@ -71,11 +71,14 @@ Expected: `process=undefined require=undefined global=undefined __dirname=undefi
 No real browser game uses `fs`/`process`/Node builtins, so removing them breaks
 nothing that should exist. The notes below are the only differences:
 
-- **`--experimental-vm-modules` is required** — but `cli.js` auto-applies it (it
-  re-execs node with the flag), so this is invisible to users.
-- **`node_modules` still resolves.** Unbundled `import 'three'` works in dev with
-  no build step — the realm resolves bare specifiers against the game's
-  `node_modules`. (Bundled games work too.) So the normal dev loop is unchanged.
+- **The realm requires `--experimental-vm-modules`.** The sandbox uses
+  `vm.SourceTextModule`, which lives behind that flag. `cli.js` sets it
+  automatically by re-execing node; an app that embeds `launch()` must start node
+  with it (`launch()` throws a clear error otherwise). This is the same flag Jest
+  requires for ESM tests — production-stable, just not yet un-flagged in Node.
+- **`node_modules` resolves.** Unbundled `import 'three'` works in dev with no
+  build step: the realm resolves bare specifiers against the game's
+  `node_modules`. Bundled `.jsgame` games use relative imports only.
 - **Node builtins are blocked.** `import 'fs'` / `import 'child_process'` (and the
   globals `process`/`require`/`fs`) hard-error. The only "casualty" is a
   non-portable hack like `process.exit()` — which never worked in a browser

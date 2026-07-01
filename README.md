@@ -71,10 +71,52 @@ distributable `.jsgame`, `npm run build` first.) See the
 [Simple Vite](https://github.com/monteslu/jsgames/tree/main/simple-vite) example.
 
 ### Security
-Games run in an isolated browser sandbox (a `node:vm` realm): game code sees only
-browser APIs and **no `process` / `require` / `fs`** — a game can't read your
-files or run shell commands, just like a browser tab. Threaded WebAssembly still
-works. See [docs/SECURITY.md](./docs/SECURITY.md).
+Games run in an isolated browser sandbox (a `node:vm` `SourceTextModule` realm —
+see [docs/SECURITY.md](./docs/SECURITY.md)): game code sees only browser APIs and
+**no `process` / `require` / `fs`** — a game can't read your files or run shell
+commands, just like a browser tab. Threaded WebAssembly still works.
+
+The realm requires node to be started with `--experimental-vm-modules` (the
+`rungame` CLI sets it automatically; see the embedding note below).
+
+## Programmatic use / embedding
+
+You can `import` the package and launch a game from your own app instead of the
+`rungame` CLI. Importing has **no side effects** — no argv is read, no host
+globals are installed, and no window opens until you call `launch()`.
+
+```js
+import { launch } from 'rungame';
+
+await launch('/path/to/game.jsgame', {
+  fullscreen: true,
+  showFps: false,
+  integerScaling: false,
+  // optional extras:
+  // stretch: false,          // ignore aspect ratio (implies fullscreen)
+  // addconcfg: '/path/es_input.cfg',
+  // gameinfoxml: '/path/gameinfo.xml',
+  // p1index: '0', p1name: '...', p1guid: '...',  // (and p2*/p3*/p4*)
+});
+```
+
+`launch(gamePath, opts)` accepts the same three game forms as the CLI: a game
+**directory**, a `.jsg` **marker** file inside it, or a `.jsgame`/`.zip`
+**archive** (extracted to a temp dir). It resolves the entry (`package.json`
+`main`, else `main.js` / `src/main.js` / …), runs `npm install` if the game has
+dependencies, opens the SDL window, and runs the game loop for the lifetime of
+the process. Call it once per process.
+
+> **Start node with `--experimental-vm-modules`.**
+> The game sandbox uses `vm.SourceTextModule`, which lives behind that flag. The
+> `rungame` CLI sets it for you (it re-execs itself), but an app that embeds
+> `launch()` in its own process must start node with the flag:
+> `node --experimental-vm-modules your-app.js` (or
+> `NODE_OPTIONS=--experimental-vm-modules`). `launch()` throws a clear error if
+> the flag is missing. This is the same flag Jest requires for ESM — stable and
+> widely used, just not yet un-flagged in Node.
+>
+> Building your game to a bundle avoids both.
 
 ## Notes on Installing to a device
 

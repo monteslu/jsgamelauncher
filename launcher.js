@@ -29,21 +29,11 @@ import { Video } from './video.js';
 import initializeFontFace from './fontface.js';
 import { createRealm } from './realm.js';
 
-
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err, err.code);
-  if (err.code === 'EPIPE') {
-    // console.log('EPIPE');
-    // process.exit(0);
-    return;
-  } else if (err.message.includes('SDL_JoystickPathForIndex')) {
-    // console.log('ECONNRESET');
-    // process.exit(0);
-    return;
-  }
-  // Perform cleanup or logging here
-  process.exit(1); // Optional: Exit the process gracefully
-});
+// NOTE: This module must have NO side effects at import time — importing it
+// (e.g. from index.js) must not parse argv, install the host globals, or open
+// an SDL window. All of that happens inside launch(). The uncaughtException
+// handler and the host-global installation are done once, lazily, the first
+// time launch() runs (see installHostGlobals()).
 
 // Extract a .jsgame/.zip archive to a real on-disk dir and return its path.
 // Content-addressed (a hash of the zip) so re-runs reuse it; pruned to a few
@@ -94,37 +84,64 @@ async function extractGameArchive(archivePath) {
   return dir;
 }
 
-globalThis.global = globalThis;
-globalThis.self = globalThis;
-console.log('LAUNCHING....');
-// Stub missing optional CJS modules so libraries with webpack guards don't crash.
-// Returns a Proxy that handles any property access/construction gracefully.
-const _origLoad = Module._load;
-const _noopProxy = new Proxy(function(){}, {
-  get: (_, prop) => prop === 'prototype' ? {} : _noopProxy,
-  construct: () => new Proxy({}, { get: (_, p) => p === 'add' ? () => {} : _noopProxy }),
-  apply: () => _noopProxy,
-});
-Module._load = function(request, ...args) {
-  try { return _origLoad.call(this, request, ...args); }
-  catch (e) { if (e.code === 'MODULE_NOT_FOUND') return _noopProxy; throw e; }
-};
-
+// ---------------------------------------------------------------------------
+// Module-scoped runtime state.
+//
+// These used to be initialized inline at module top-level (from the argv-parsed
+// options), which meant importing this module launched a game. They are now
+// plain declarations set by launch() before it calls main(). resize(), drawFPS()
+// and main() read them exactly as before.
+// ---------------------------------------------------------------------------
 let canvas;
 let stretchToWindow = false;
-globalThis.window = globalThis;
-globalThis._jsg = { controllers: [], joysticks: [], sdl, nrsc };
-globalThis.HTMLCanvasElement = nrsc.Canvas;
-globalThis.ImageData = ImageData;
-globalThis.OffscreenCanvas = OffscreenCanvas;
-globalThis.Audio = Audio;
-globalThis.Video = Video;
-globalThis.Worker = Worker;
-globalThis.WebSocket = WebSocket;
 
-URL.createObjectURL = createObjectURL;
-URL.revokeObjectURL = revokeObjectURL;
-URL.fetchBlobFromUrl = fetchBlobFromUrl;
+// Per-run inputs, populated by launch():
+let options = {};                // CLI-shaped options object (see buildOptions)
+let romFile;                     // the path the user pointed us at
+let romDir;                      // resolved game root directory
+let gameFile;                    // resolved entry file inside romDir
+
+// rAF plumbing (installed on globalThis by installHostGlobals):
+let rafCallbackId = 1;
+let currentRafCallback;
+
+function requestAnimationFrame(callback) {
+  rafCallbackId++;
+  currentRafCallback = {
+    id: rafCallbackId,
+    callback,
+  };
+  return rafCallbackId;
+};
+
+function cancelAnimationFrame(id) {
+  if (currentRafCallback?.id === id) {
+    currentRafCallback = null;
+  }
+};
+
+const DEFAULT_GAME_WIDTH = 640;
+const DEFAULT_GAME_HEIGHT = 480;
+let backCanvas;
+let appWindow;
+let integerScaling = false;
+let canToggleIntegerScaling = true;
+let callResizeEvents;
+let fullscreen = false;
+let canToggleFullscreen = true;
+let showFPS = false;
+let canToggleFPS = true;
+let setCanvasSizeToWindow = false;
+let canvasAutoResize = false;
+let canCanvasAutoResize = true;
+let frameCount = 0;               // Frame counter
+let fps = 0;                      // Current FPS value
+let fpsInterval = 1000;           // Update FPS every second
+let lastTime; // Track the last frame's time
+let windowRatio = 1;
+let useBackCanvas = false;
+let aspectRatioDifference = 0;
+
 // ts uses this class
 class MutationObserver {
   constructor() {
@@ -132,7 +149,10 @@ class MutationObserver {
   observe() {
   }
 }
-globalThis.MutationObserver = MutationObserver;
+
+// The fake DOM document games see. References module-scoped `canvas`/`appWindow`,
+// which are set up during main(); building it here (not inside a function) keeps
+// the same single object identity the original code relied on.
 const document = {
   set title(newTitle) {
     appWindow.setTitle(newTitle);
@@ -198,187 +218,204 @@ const document = {
     },
   },
 };
-globalThis.document = document;
-globalThis.screen = {};
-// web audio
-globalThis.AudioContext = AudioContext;
-globalThis.AudioDestinationNode = AudioDestinationNode;
+
 // WebGLRenderingContext must be distinct from WebGL2RenderingContext
 // so Three.js instanceof checks correctly detect WebGL2
 class WebGLRenderingContext {}
-globalThis.WebGLRenderingContext = WebGLRenderingContext;
-globalThis.WebGL2RenderingContext = WebGL2RenderingContext;
-// Full WebAudio graph surface (webaudio-node exports ~20 classes; expose them
-// all so games can reach filters/analysers/reverb/spatial/compression, not just
-// the basic oscillator+gain path).
-globalThis.OfflineAudioContext = OfflineAudioContext;
-globalThis.AudioNode = AudioNode;
-globalThis.AudioParam = AudioParam;
-globalThis.PeriodicWave = PeriodicWave;
-globalThis.OscillatorNode = OscillatorNode;
-globalThis.GainNode = GainNode;
-globalThis.AudioBuffer = AudioBuffer;
-globalThis.AudioBufferSourceNode = AudioBufferSourceNode;
-globalThis.BiquadFilterNode = BiquadFilterNode;
-globalThis.DelayNode = DelayNode;
-globalThis.StereoPannerNode = StereoPannerNode;
-globalThis.PannerNode = PannerNode;
-globalThis.ConstantSourceNode = ConstantSourceNode;
-globalThis.ChannelSplitterNode = ChannelSplitterNode;
-globalThis.ChannelMergerNode = ChannelMergerNode;
-globalThis.AnalyserNode = AnalyserNode;
-globalThis.DynamicsCompressorNode = DynamicsCompressorNode;
-globalThis.WaveShaperNode = WaveShaperNode;
-globalThis.IIRFilterNode = IIRFilterNode;
-globalThis.ConvolverNode = ConvolverNode;
 
-globalThis.sdl = sdl;
-setAudioSdl(sdl);
+// ---------------------------------------------------------------------------
+// installHostGlobals(): install the host/browser shim globals onto globalThis.
+// This has real side effects (patches Module._load, mutates globalThis, installs
+// an uncaughtException handler) so it must NOT run on import — it runs once, the
+// first time launch() is called. Guarded so repeated launch() calls are cheap.
+// ---------------------------------------------------------------------------
+let hostGlobalsInstalled = false;
+function installHostGlobals() {
+  if (hostGlobalsInstalled) return;
+  hostGlobalsInstalled = true;
 
-let rafCallbackId = 1;
-let currentRafCallback;
+  process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err, err.code);
+    if (err.code === 'EPIPE') {
+      // console.log('EPIPE');
+      // process.exit(0);
+      return;
+    } else if (err.message.includes('SDL_JoystickPathForIndex')) {
+      // console.log('ECONNRESET');
+      // process.exit(0);
+      return;
+    }
+    // Perform cleanup or logging here
+    process.exit(1); // Optional: Exit the process gracefully
+  });
 
-function requestAnimationFrame(callback) {
-  rafCallbackId++;
-  currentRafCallback = {
-    id: rafCallbackId,
-    callback,
+  globalThis.global = globalThis;
+  globalThis.self = globalThis;
+  console.log('LAUNCHING....');
+  // Stub missing optional CJS modules so libraries with webpack guards don't crash.
+  // Returns a Proxy that handles any property access/construction gracefully.
+  const _origLoad = Module._load;
+  const _noopProxy = new Proxy(function(){}, {
+    get: (_, prop) => prop === 'prototype' ? {} : _noopProxy,
+    construct: () => new Proxy({}, { get: (_, p) => p === 'add' ? () => {} : _noopProxy }),
+    apply: () => _noopProxy,
+  });
+  Module._load = function(request, ...args) {
+    try { return _origLoad.call(this, request, ...args); }
+    catch (e) { if (e.code === 'MODULE_NOT_FOUND') return _noopProxy; throw e; }
   };
-  return rafCallbackId;
-};
 
-function cancelAnimationFrame(id) {
-  if (currentRafCallback?.id === id) {
-    currentRafCallback = null;
+  globalThis.window = globalThis;
+  globalThis._jsg = { controllers: [], joysticks: [], sdl, nrsc };
+  globalThis.HTMLCanvasElement = nrsc.Canvas;
+  globalThis.ImageData = ImageData;
+  globalThis.OffscreenCanvas = OffscreenCanvas;
+  globalThis.Audio = Audio;
+  globalThis.Video = Video;
+  globalThis.Worker = Worker;
+  globalThis.WebSocket = WebSocket;
+
+  URL.createObjectURL = createObjectURL;
+  URL.revokeObjectURL = revokeObjectURL;
+  URL.fetchBlobFromUrl = fetchBlobFromUrl;
+  globalThis.MutationObserver = MutationObserver;
+  globalThis.document = document;
+  globalThis.screen = {};
+  // web audio
+  globalThis.AudioContext = AudioContext;
+  globalThis.AudioDestinationNode = AudioDestinationNode;
+  globalThis.WebGLRenderingContext = WebGLRenderingContext;
+  globalThis.WebGL2RenderingContext = WebGL2RenderingContext;
+  // Full WebAudio graph surface (webaudio-node exports ~20 classes; expose them
+  // all so games can reach filters/analysers/reverb/spatial/compression, not just
+  // the basic oscillator+gain path).
+  globalThis.OfflineAudioContext = OfflineAudioContext;
+  globalThis.AudioNode = AudioNode;
+  globalThis.AudioParam = AudioParam;
+  globalThis.PeriodicWave = PeriodicWave;
+  globalThis.OscillatorNode = OscillatorNode;
+  globalThis.GainNode = GainNode;
+  globalThis.AudioBuffer = AudioBuffer;
+  globalThis.AudioBufferSourceNode = AudioBufferSourceNode;
+  globalThis.BiquadFilterNode = BiquadFilterNode;
+  globalThis.DelayNode = DelayNode;
+  globalThis.StereoPannerNode = StereoPannerNode;
+  globalThis.PannerNode = PannerNode;
+  globalThis.ConstantSourceNode = ConstantSourceNode;
+  globalThis.ChannelSplitterNode = ChannelSplitterNode;
+  globalThis.ChannelMergerNode = ChannelMergerNode;
+  globalThis.AnalyserNode = AnalyserNode;
+  globalThis.DynamicsCompressorNode = DynamicsCompressorNode;
+  globalThis.WaveShaperNode = WaveShaperNode;
+  globalThis.IIRFilterNode = IIRFilterNode;
+  globalThis.ConvolverNode = ConvolverNode;
+
+  globalThis.sdl = sdl;
+  setAudioSdl(sdl);
+
+  globalThis.requestAnimationFrame = requestAnimationFrame;
+  globalThis.cancelAnimationFrame = cancelAnimationFrame;
+}
+
+// ---------------------------------------------------------------------------
+// resolveGame(): the argv-independent version of the old top-level resolution
+// block. Given a game path (directory / .jsg marker / .jsgame|.zip archive),
+// resolve the game root + entry file, run auto npm-install, and install the
+// game-specific globals (loadImage/Image/fetch/localStorage/FontFace, etc).
+// Populates the module-scoped romFile/romDir/gameFile.
+// ---------------------------------------------------------------------------
+async function resolveGame(gamePath) {
+  romFile = gamePath;
+  if (!romFile) {
+    throw new Error('rom file not found: no game path provided');
   }
-};
+  if (!fs.existsSync(romFile)) {
+    romFile = path.join(process.cwd(), romFile);
+  }
+  if (!fs.existsSync(romFile)) {
+    throw new Error(`rom file not found: ${gamePath}`);
+  }
+  // Accept THREE forms: a game directory, a marker file inside it (e.g. game.jsg),
+  // or a .jsgame/.zip archive (extracted to a temp dir, like jsgame-libretro).
+  const lc = romFile.toLowerCase();
+  if (fs.statSync(romFile).isDirectory()) {
+    romDir = romFile;
+  } else if (lc.endsWith('.jsgame') || lc.endsWith('.zip')) {
+    romDir = await extractGameArchive(romFile);
+  } else {
+    // a file inside the game dir (the .jsg marker, or any entry) → its dir
+    romDir = path.dirname(romFile);
+  }
+  console.log('romFile', romFile, 'romDir', romDir);
+  gameFile = undefined;
 
-globalThis.requestAnimationFrame = requestAnimationFrame;
-globalThis.cancelAnimationFrame = cancelAnimationFrame;
-// console.log('getting options...');
+  // Issue #9: Check package.json main FIRST
+  if (fs.existsSync(path.join(romDir, 'package.json'))) {
+    const packjson = JSON.parse(fs.readFileSync(path.join(romDir, 'package.json'), 'utf8'));
 
-const options = getOptions();
+    // Issue #31: Auto npm install if dependencies exist but node_modules missing
+    if (packjson.dependencies && !fs.existsSync(path.join(romDir, 'node_modules'))) {
+      console.log('Dependencies found but node_modules missing, running npm install...');
+      const { execSync } = await import('child_process');
+      try {
+        execSync('npm install', { cwd: romDir, stdio: 'inherit' });
+        console.log('npm install completed');
+      } catch (err) {
+        console.error('npm install failed:', err.message);
+      }
+    }
 
-console.log('\n----------OPTIONS----------:\n', options, '\n');
-
-let romFile = options.Rom;
-if (!romFile) {
-  console.error('rom file not found');
-  process.exit(1);
-}
-if (!fs.existsSync(romFile)) {
-  romFile = path.join(process.cwd(), romFile);
-}
-if (!fs.existsSync(romFile)) {
-  console.error('rom file not found', romFile);
-  process.exit(1);
-}
-// Accept THREE forms: a game directory, a marker file inside it (e.g. game.jsg),
-// or a .jsgame/.zip archive (extracted to a temp dir, like jsgame-libretro).
-let romDir;
-const lc = romFile.toLowerCase();
-if (fs.statSync(romFile).isDirectory()) {
-  romDir = romFile;
-} else if (lc.endsWith('.jsgame') || lc.endsWith('.zip')) {
-  romDir = await extractGameArchive(romFile);
-} else {
-  // a file inside the game dir (the .jsg marker, or any entry) → its dir
-  romDir = path.dirname(romFile);
-}
-console.log('romFile', romFile, 'romDir', romDir);
-let gameFile;
-
-// Issue #9: Check package.json main FIRST
-if (fs.existsSync(path.join(romDir, 'package.json'))) {
-  const packjson = JSON.parse(fs.readFileSync(path.join(romDir, 'package.json'), 'utf8'));
-  
-  // Issue #31: Auto npm install if dependencies exist but node_modules missing
-  if (packjson.dependencies && !fs.existsSync(path.join(romDir, 'node_modules'))) {
-    console.log('Dependencies found but node_modules missing, running npm install...');
-    const { execSync } = await import('child_process');
-    try {
-      execSync('npm install', { cwd: romDir, stdio: 'inherit' });
-      console.log('npm install completed');
-    } catch (err) {
-      console.error('npm install failed:', err.message);
+    if (packjson.main) {
+      gameFile = path.join(romDir, packjson.main);
+      if (!fs.existsSync(gameFile)) {
+        throw new Error(`${gameFile} package.json main file not found`);
+      }
     }
   }
-  
-  if (packjson.main) {
-    gameFile = path.join(romDir, packjson.main);
-    if (!fs.existsSync(gameFile)) {
-      console.error(gameFile, 'package.json main file not found');
-      process.exit(1);
+
+  // Fallback to file order if no package.json main
+  if (!gameFile) {
+    const tryOrder = [
+      ['main.js'],
+      ['src', 'main.js'],
+      ['index.js'],
+      ['src', 'index.js'],
+      ['game.js'],
+      ['src', 'game.js'],
+    ]
+    for (const order of tryOrder) {
+      const tryGameFile = path.join(romDir, ...order);
+      if (fs.existsSync(tryGameFile)) {
+        gameFile = tryGameFile;
+        break;
+      }
     }
   }
-}
 
-// Fallback to file order if no package.json main
-if (!gameFile) {
-  const tryOrder = [
-    ['main.js'],
-    ['src', 'main.js'],
-    ['index.js'],
-    ['src', 'index.js'],
-    ['game.js'],
-    ['src', 'game.js'],
-  ]
-  for (const order of tryOrder) {
-    const tryGameFile = path.join(romDir, ...order);
-    if (fs.existsSync(tryGameFile)) {
-      gameFile = tryGameFile;
-      break;
-    }
+  if (!gameFile) {
+    throw new Error('game file not found');
   }
+
+  const romName = path.basename(romDir);
+  globalThis._jsg.rom = {
+    romName,
+    romDir,
+    gameFile,
+  };
+  console.log('globalThis._jsg.rom', globalThis._jsg.rom);
+  globalThis.HTMLCanvasElement = nrsc.Canvas;
+  if (fs.existsSync(path.join(romDir, 'node_modules'))) {
+    Module.globalPaths.push(path.join(romDir, 'node_modules'));
+    // console.log(Module.globalPaths);
+  }
+  console.log('creating rom specific globals', romDir);
+  globalThis.loadImage = createLoadImage(romDir);
+  globalThis.Image = createImageClass(romDir);
+  globalThis.fetch = createFetch(romDir);
+  globalThis.XMLHttpRequest = createXMLHttpRequest(romDir);
+  globalThis.localStorage = await createLocalStorage(romName);
+  globalThis.FontFace = initializeFontFace(romDir);
 }
-
-if (!gameFile) {
-  console.error('game file not found');
-  process.exit(1);
-}
-
-const romName = path.basename(romDir);
-globalThis._jsg.rom = {
-  romName,
-  romDir,
-  gameFile,
-};
-console.log('globalThis._jsg.rom', globalThis._jsg.rom);
-globalThis.HTMLCanvasElement = nrsc.Canvas;
-if (fs.existsSync(path.join(romDir, 'node_modules'))) {
-  Module.globalPaths.push(path.join(romDir, 'node_modules'));
-  // console.log(Module.globalPaths);
-}
-console.log('creating rom specific globals', romDir);
-globalThis.loadImage = createLoadImage(romDir);
-globalThis.Image = createImageClass(romDir);
-globalThis.fetch = createFetch(romDir);
-globalThis.XMLHttpRequest = createXMLHttpRequest(romDir);
-globalThis.localStorage = await createLocalStorage(romName);
-globalThis.FontFace = initializeFontFace(romDir);
-
-
-const DEFAULT_GAME_WIDTH = 640;
-const DEFAULT_GAME_HEIGHT = 480;
-let backCanvas;
-let appWindow;
-let integerScaling = !!options.Integerscaling;
-let canToggleIntegerScaling = true;
-let callResizeEvents;
-let fullscreen = !!options.Fullscreen || !!options.Stretch;
-let canToggleFullscreen = true;
-let showFPS = !!options.Showfps;
-let canToggleFPS = true;
-let setCanvasSizeToWindow = false;
-let canvasAutoResize = false;
-let canCanvasAutoResize = true;
-let frameCount = 0;               // Frame counter
-let fps = 0;                      // Current FPS value
-let fpsInterval = 1000;           // Update FPS every second
-let lastTime; // Track the last frame's time
-let windowRatio = 1;
-let useBackCanvas = false;
-let aspectRatioDifference = 0;
 
 const resize = () => {
   const { pixelWidth, pixelHeight } = appWindow;
@@ -914,4 +951,115 @@ async function main() {
   }, 5000);
 }
 
-export default main;
+/**
+ * Map a friendly programmatic `opts` object onto the CLI-shaped options object
+ * that main()/resolveGame() read (the same shape options.js/commander produces).
+ * Accepts either the friendly names (fullscreen, showFps, integerScaling, …) or
+ * the raw CLI-cased names (Fullscreen, Showfps, Integerscaling, …) so cli.js can
+ * pass the commander opts through directly.
+ *
+ * @param {object} [opts]
+ * @returns {object} CLI-shaped options (Fullscreen, Showfps, Integerscaling, …)
+ */
+function buildOptions(opts = {}) {
+  const pick = (...names) => {
+    for (const n of names) {
+      if (opts[n] !== undefined) return opts[n];
+    }
+    return undefined;
+  };
+  return {
+    Fullscreen: !!pick('fullscreen', 'Fullscreen'),
+    Stretch: !!pick('stretch', 'Stretch'),
+    Showfps: !!pick('showFps', 'showFPS', 'Showfps'),
+    Integerscaling: !!pick('integerScaling', 'Integerscaling'),
+    Antialiasing: !!pick('antialiasing', 'antialias', 'Antialiasing'),
+    Addconcfg: pick('addconcfg', 'Addconcfg'),
+    Gameinfoxml: pick('gameinfoxml', 'Gameinfoxml'),
+    P1index: pick('p1index', 'P1index'),
+    P2index: pick('p2index', 'P2index'),
+    P3index: pick('p3index', 'P3index'),
+    P4index: pick('p4index', 'P4index'),
+    P1name: pick('p1name', 'P1name'),
+    P2name: pick('p2name', 'P2name'),
+    P3name: pick('p3name', 'P3name'),
+    P4name: pick('p4name', 'P4name'),
+    P1guid: pick('p1guid', 'P1guid'),
+    P2guid: pick('p2guid', 'P2guid'),
+    P3guid: pick('p3guid', 'P3guid'),
+    P4guid: pick('p4guid', 'P4guid'),
+  };
+}
+
+/**
+ * Launch a jsgame programmatically. This is the embedding entry point — it does
+ * NOT read process.argv and importing this module does not launch anything.
+ *
+ * The game runs in an isolated `node:vm` realm (see realm.js) that sees only a
+ * browser surface (no process/require/fs). This requires node to be started with
+ * **`--experimental-vm-modules`** (vm.SourceTextModule lives behind that flag).
+ * The `rungame` CLI (cli.js) sets it automatically by re-exec'ing; an app that
+ * embeds `launch()` in its own process must start node with the flag itself (we
+ * do not — and cannot — re-exec the embedder's process from here). launch()
+ * throws a clear error if the flag is missing.
+ *
+ * Calling launch() has real, one-time side effects: it installs the browser/host
+ * shim globals onto globalThis and opens an SDL window. It runs the game loop
+ * for the lifetime of the process (the window's `close` event calls
+ * process.exit). Intended to be called once per process.
+ *
+ * @param {string} gamePath
+ *   Path to the game: a game **directory**, a marker file inside it (e.g.
+ *   `game.jsg`), or a `.jsgame`/`.zip` archive (extracted to a temp dir).
+ * @param {object} [opts]
+ * @param {boolean} [opts.fullscreen=false]      Start fullscreen.
+ * @param {boolean} [opts.stretch=false]         Ignore aspect ratio (implies fullscreen).
+ * @param {boolean} [opts.showFps=false]         Overlay an FPS counter.
+ * @param {boolean} [opts.integerScaling=false]  Only scale by integer factors.
+ * @param {string}  [opts.addconcfg]             Path to an es_input.cfg for extra controller config.
+ * @param {string}  [opts.gameinfoxml]           Path to an EmulationStation gameinfo xml.
+ * @param {string}  [opts.p1index] [opts.p2index] [opts.p3index] [opts.p4index]  Player controller indices.
+ * @param {string}  [opts.p1name]  [opts.p2name]  [opts.p3name]  [opts.p4name]   Player controller names.
+ * @param {string}  [opts.p1guid]  [opts.p2guid]  [opts.p3guid]  [opts.p4guid]   Player controller guids.
+ *   (CLI-cased keys — Fullscreen, Showfps, Integerscaling, … — are also accepted,
+ *   so cli.js can pass its commander opts straight through.)
+ * @returns {Promise<void>} Resolves once the game has booted and the loop is running.
+ */
+export async function launch(gamePath, opts = {}) {
+  // The game realm (realm.js) uses vm.SourceTextModule, which is only available
+  // when node was started with --experimental-vm-modules. Fail loud + early with
+  // a clear message rather than crashing deep in realm.js with an opaque
+  // "SourceTextModule is not a constructor". The `rungame` CLI sets the flag
+  // automatically (cli.js re-execs); an embedder must start node with it.
+  const vm = await import('node:vm');
+  if (typeof vm.SourceTextModule !== 'function') {
+    throw new Error(
+      'jsgamelauncher: vm.SourceTextModule is unavailable. Start node with ' +
+      '--experimental-vm-modules (e.g. `node --experimental-vm-modules your-app.js`). ' +
+      'The rungame CLI does this for you; an app embedding launch() must pass the flag.',
+    );
+  }
+
+  installHostGlobals();
+
+  options = buildOptions(opts);
+  console.log('\n----------OPTIONS----------:\n', { Rom: gamePath, ...options }, '\n');
+
+  integerScaling = !!options.Integerscaling;
+  fullscreen = !!options.Fullscreen || !!options.Stretch;
+  showFPS = !!options.Showfps;
+
+  await resolveGame(gamePath);
+  await main();
+}
+
+/**
+ * CLI-compatible default entry: parse argv via options.js (commander), then
+ * launch. Kept so `rungame` (cli.js) behaves exactly as before the refactor.
+ * @returns {Promise<void>}
+ */
+export default async function cliMain() {
+  const options = getOptions();
+  const { Rom, ...rest } = options;
+  return launch(Rom, rest);
+}
