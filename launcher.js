@@ -317,6 +317,54 @@ function installHostGlobals() {
   globalThis.cancelAnimationFrame = cancelAnimationFrame;
 }
 
+// Standard-mapping gamepad button order (W3C Gamepad "standard" layout). Used by the
+// host-session synthetic navigator to expose injected input by button name.
+const STANDARD_BUTTON_ORDER = [
+  'a', 'b', 'x', 'y', 'l1', 'r1', 'l2', 'r2', 'select', 'start',
+  'l3', 'r3', 'up', 'down', 'left', 'right', 'home',
+];
+
+// The browser-realm intrinsics both main() and createHostSession() hand to the game
+// realm. Reads globalThis.* references installed by installHostGlobals(); the caller
+// (window loop OR host session) drives the same canvas/rAF/navigator the realm sees.
+function buildRealmGlobals() {
+  return {
+    HTMLCanvasElement: globalThis.HTMLCanvasElement,
+    ImageData, OffscreenCanvas,
+    Audio: globalThis.Audio, Video: globalThis.Video,
+    Worker: globalThis.Worker, WebSocket: globalThis.WebSocket,
+    MutationObserver: globalThis.MutationObserver,
+    document: globalThis.document, screen: globalThis.screen,
+    AudioContext: globalThis.AudioContext, OfflineAudioContext: globalThis.OfflineAudioContext,
+    AudioDestinationNode: globalThis.AudioDestinationNode, AudioBuffer: globalThis.AudioBuffer,
+    AudioNode: globalThis.AudioNode, AudioParam: globalThis.AudioParam, PeriodicWave: globalThis.PeriodicWave,
+    OscillatorNode: globalThis.OscillatorNode, GainNode: globalThis.GainNode,
+    AudioBufferSourceNode: globalThis.AudioBufferSourceNode, BiquadFilterNode: globalThis.BiquadFilterNode,
+    DelayNode: globalThis.DelayNode, StereoPannerNode: globalThis.StereoPannerNode, PannerNode: globalThis.PannerNode,
+    ConstantSourceNode: globalThis.ConstantSourceNode,
+    ChannelSplitterNode: globalThis.ChannelSplitterNode, ChannelMergerNode: globalThis.ChannelMergerNode,
+    AnalyserNode: globalThis.AnalyserNode, DynamicsCompressorNode: globalThis.DynamicsCompressorNode,
+    WaveShaperNode: globalThis.WaveShaperNode, IIRFilterNode: globalThis.IIRFilterNode,
+    ConvolverNode: globalThis.ConvolverNode,
+    WebGLRenderingContext: globalThis.WebGLRenderingContext, WebGL2RenderingContext: globalThis.WebGL2RenderingContext,
+    requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame,
+    requestIdleCallback: (cb) => setTimeout(() => cb({ timeRemaining: () => 10 }), 0),
+    cancelIdleCallback: clearTimeout,
+    loadImage: globalThis.loadImage, Image: globalThis.Image,
+    fetch: globalThis.fetch, XMLHttpRequest: globalThis.XMLHttpRequest,
+    localStorage: globalThis.localStorage, FontFace: globalThis.FontFace,
+    navigator: globalThis.navigator,
+    innerWidth: globalThis.innerWidth, innerHeight: globalThis.innerHeight,
+    devicePixelRatio: 1,
+    sdl: globalThis.sdl,
+    alert: (msg) => console.log('alert:', msg),
+    addEventListener: globalThis.addEventListener,
+    removeEventListener: globalThis.removeEventListener,
+    dispatchEvent: globalThis.dispatchEvent || (() => true),
+    close: globalThis.close || (() => {}),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // resolveGame(): the argv-independent version of the old top-level resolution
 // block. Given a game path (directory / .jsg marker / .jsgame|.zip archive),
@@ -692,44 +740,7 @@ async function main() {
   // host intrinsics; the SDL window + this frame loop stay in the main realm and
   // drive the realm's display canvas / rAF / gamepad (they read the same
   // globalThis.* references). See realm.js.
-  const realmGlobals = {
-    HTMLCanvasElement: globalThis.HTMLCanvasElement,
-    ImageData, OffscreenCanvas,
-    Audio: globalThis.Audio, Video: globalThis.Video,
-    Worker: globalThis.Worker, WebSocket: globalThis.WebSocket,
-    MutationObserver: globalThis.MutationObserver,
-    document: globalThis.document, screen: globalThis.screen,
-    AudioContext: globalThis.AudioContext, OfflineAudioContext: globalThis.OfflineAudioContext,
-    AudioDestinationNode: globalThis.AudioDestinationNode, AudioBuffer: globalThis.AudioBuffer,
-    AudioNode: globalThis.AudioNode, AudioParam: globalThis.AudioParam, PeriodicWave: globalThis.PeriodicWave,
-    OscillatorNode: globalThis.OscillatorNode, GainNode: globalThis.GainNode,
-    AudioBufferSourceNode: globalThis.AudioBufferSourceNode, BiquadFilterNode: globalThis.BiquadFilterNode,
-    DelayNode: globalThis.DelayNode, StereoPannerNode: globalThis.StereoPannerNode, PannerNode: globalThis.PannerNode,
-    ConstantSourceNode: globalThis.ConstantSourceNode,
-    ChannelSplitterNode: globalThis.ChannelSplitterNode, ChannelMergerNode: globalThis.ChannelMergerNode,
-    AnalyserNode: globalThis.AnalyserNode, DynamicsCompressorNode: globalThis.DynamicsCompressorNode,
-    WaveShaperNode: globalThis.WaveShaperNode, IIRFilterNode: globalThis.IIRFilterNode,
-    ConvolverNode: globalThis.ConvolverNode,
-    WebGLRenderingContext: globalThis.WebGLRenderingContext, WebGL2RenderingContext: globalThis.WebGL2RenderingContext,
-    requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame,
-    requestIdleCallback: (cb) => setTimeout(() => cb({ timeRemaining: () => 10 }), 0),
-    cancelIdleCallback: clearTimeout,
-    loadImage: globalThis.loadImage, Image: globalThis.Image,
-    fetch: globalThis.fetch, XMLHttpRequest: globalThis.XMLHttpRequest,
-    localStorage: globalThis.localStorage, FontFace: globalThis.FontFace,
-    navigator: globalThis.navigator,
-    innerWidth: globalThis.innerWidth, innerHeight: globalThis.innerHeight,
-    devicePixelRatio: 1,
-    sdl: globalThis.sdl,
-    alert: (msg) => console.log('alert:', msg),
-    // window-level event listeners (keydown/keyup wired by events.js to SDL);
-    // games do window.addEventListener('keydown', …). document.addEventListener
-    // is already on the document object we pass in.
-    addEventListener: globalThis.addEventListener,
-    removeEventListener: globalThis.removeEventListener,
-    dispatchEvent: globalThis.dispatchEvent || (() => true),
-    close: globalThis.close || (() => {}),
-  };
+  const realmGlobals = buildRealmGlobals();
   const realm = createRealm({ globals: realmGlobals, gameRoot: romDir });
   await realm.runEntry(fullGamefile);
   resize();
@@ -1025,6 +1036,150 @@ function buildOptions(opts = {}) {
  *   so cli.js can pass its commander opts straight through.)
  * @returns {Promise<void>} Resolves once the game has booted and the loop is running.
  */
+/**
+ * Host-controlled (headless) session — the embedding mode for a harness that wants
+ * to DRIVE the game frame-by-frame and read its output, instead of the standalone
+ * window+loop. NO SDL window is created and NO internal loop runs; the game renders
+ * into an offscreen canvas that the caller steps and reads back.
+ *
+ * This is fully optional and parallel to launch()/main() — the standalone `rungame`
+ * path is unchanged. Returns a session handle:
+ *
+ *   const s = await createHostSession('/path/to/game.jsgame', { width, height });
+ *   s.setInput([{ a: true, dpad: {right:true} }]);   // inject controller state
+ *   s.stepFrame();                                    // pump one requestAnimationFrame
+ *   const { data, width, height } = s.readFrame();    // RGBA Uint8ClampedArray
+ *   s.destroy();
+ *
+ * @param {string} gamePath  dir / .jsg / .jsgame entry (same as launch()).
+ * @param {object} [opts]
+ * @param {number} [opts.width=640]   offscreen canvas width
+ * @param {number} [opts.height=480]  offscreen canvas height
+ * @param {number} [opts.stepMs=1000/60]  virtual ms advanced per stepFrame (deterministic clock)
+ * @returns {Promise<{stepFrame, readFrame, setInput, canvas, destroy}>}
+ */
+export async function createHostSession(gamePath, opts = {}) {
+  const vm = await import('node:vm');
+  if (typeof vm.SourceTextModule !== 'function') {
+    throw new Error(
+      'jsgamelauncher: vm.SourceTextModule is unavailable. Start node with ' +
+      '--experimental-vm-modules. (createHostSession, like launch(), needs it.)',
+    );
+  }
+
+  const width = opts.width || DEFAULT_GAME_WIDTH;
+  const height = opts.height || DEFAULT_GAME_HEIGHT;
+  const stepMs = opts.stepMs || (1000 / 60);
+
+  installHostGlobals();
+  options = buildOptions(opts);
+
+  // Offscreen canvas the game draws into (document.getElementById returns it).
+  canvas = createCanvas(width, height);
+  canvas.name = 'game canvas';
+  if (!canvas.getBoundingClientRect) {
+    canvas.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0,
+      width: canvas.width, height: canvas.height, right: canvas.width, bottom: canvas.height });
+  }
+  globalThis.innerWidth = width;
+  globalThis.innerHeight = height;
+
+  // Install window/document event listeners (addEventListener etc.). Normally wired
+  // to SDL keyboard via the real appWindow; a host session has no window, so pass a
+  // stub whose .on() is a no-op — games get a working addEventListener, and input
+  // arrives via the injected gamepads instead of keyboard events.
+  initializeEvents({ on: () => {} });
+
+  // Synthetic gamepad state the host injects (instead of physical SDL controllers).
+  // navigator.getGamepads() returns these so the game reads host-driven input.
+  const hostPads = [];
+  const makeGamepad = (pad, index) => ({
+    index, id: 'romdev-host-pad', connected: true, mapping: 'standard',
+    // Standard-mapping 17-button + 4-axis layout; map common names.
+    buttons: STANDARD_BUTTON_ORDER.map((name) => ({
+      pressed: !!pad[name], touched: !!pad[name], value: pad[name] ? 1 : 0,
+    })),
+    axes: [pad.lx || 0, pad.ly || 0, pad.rx || 0, pad.ry || 0],
+    timestamp: 0,
+  });
+  // Override getGamepads on the EXISTING navigator (it's a getter-only global, so we
+  // can't reassign navigator itself — mutate the object it returns).
+  const nav = globalThis.navigator;
+  if (nav) {
+    try {
+      nav.getGamepads = () => hostPads.map((p, i) => (p ? makeGamepad(p, i) : null));
+    } catch {
+      Object.defineProperty(nav, 'getGamepads', {
+        configurable: true,
+        value: () => hostPads.map((p, i) => (p ? makeGamepad(p, i) : null)),
+      });
+    }
+  }
+
+  await resolveGame(gamePath);
+  // NOTE: the physical installNavigatorShim({sdl}) is intentionally NOT called here —
+  // the host session injects synthetic pads via the getGamepads override above.
+
+  let fullGamefile = 'file://' + gameFile;
+  if (romFile.startsWith('.') || romFile.startsWith('..')) {
+    fullGamefile = 'file://' + path.join(process.cwd(), gameFile);
+  }
+
+  const realmGlobals = buildRealmGlobals();
+  const realm = createRealm({ globals: realmGlobals, gameRoot: romDir });
+  await realm.runEntry(fullGamefile); // game registers its first requestAnimationFrame
+
+  // Let the game's INITIAL async setup settle (image/asset decodes resolve on real
+  // timers, not just microtasks — without this the first frames render blank while
+  // sprites are still loading). A short real-time wait covers typical asset loads;
+  // override with opts.settleMs.
+  const settleMs = opts.settleMs != null ? opts.settleMs : 200;
+  if (settleMs > 0) await new Promise((resolve) => setTimeout(resolve, settleMs));
+
+  let virtualTime = 0;
+
+  return {
+    canvas,
+    /**
+     * Advance exactly one frame: fire the game's pending rAF with a deterministic
+     * timestamp, then YIELD to the event loop so async work the frame kicked off
+     * (image/asset loads, fetch, decoded audio, promise chains) can settle before
+     * the next frame — otherwise early frames render blank while assets are still
+     * loading. Await it: `await session.stepFrame()`.
+     */
+    async stepFrame() {
+      virtualTime += stepMs;
+      if (currentRafCallback) {
+        const cb = currentRafCallback;
+        currentRafCallback = null;
+        cb.callback(virtualTime);
+      }
+      // Let microtasks + immediate/timer callbacks (async asset loads) run.
+      await new Promise((resolve) => setImmediate(resolve));
+      return virtualTime;
+    },
+    /**
+     * Read the offscreen canvas back as RGBA. Uses the napi-rs canvas's raw pixel
+     * buffer (canvas.data()) — the same readback main()'s window path uses — rather
+     * than a separate 2d context's getImageData (which wouldn't see the game's draws
+     * on WebGL canvases or a different context instance). @returns {{data,width,height}}
+     */
+    readFrame() {
+      const raw = canvas.data(); // Uint8ClampedArray-like, RGBA, width*height*4
+      return { data: new Uint8ClampedArray(raw.buffer.slice(0)), width: canvas.width, height: canvas.height };
+    },
+    /** Inject controller state. @param {Array<object>} pads per-index pad objects. */
+    setInput(pads) {
+      hostPads.length = 0;
+      (pads || []).forEach((p, i) => { hostPads[i] = p || null; });
+    },
+    destroy() {
+      try { realm?.dispose?.(); } catch { /* ignore */ }
+      currentRafCallback = null;
+    },
+  };
+}
+
 export async function launch(gamePath, opts = {}) {
   // The game realm (realm.js) uses vm.SourceTextModule, which is only available
   // when node was started with --experimental-vm-modules. Fail loud + early with
