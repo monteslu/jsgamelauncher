@@ -12,7 +12,15 @@ import { createWebGL2Context, WebGL2RenderingContext } from 'webgl-node';
 import { createImageClass, createLoadImage } from './image.js';
 import createLocalStorage from './localstorage.js';
 import initializeEvents from './events.js';
-import { AudioContext, AudioDestinationNode, OscillatorNode, GainNode, AudioBuffer, setSdl as setAudioSdl } from 'webaudio-node';
+import {
+  AudioContext, OfflineAudioContext, AudioDestinationNode, AudioBuffer,
+  AudioNode, AudioParam, PeriodicWave,
+  OscillatorNode, GainNode, BiquadFilterNode, DelayNode, StereoPannerNode,
+  PannerNode, ConstantSourceNode, ChannelSplitterNode, ChannelMergerNode,
+  AnalyserNode, DynamicsCompressorNode, WaveShaperNode, IIRFilterNode,
+  ConvolverNode, AudioBufferSourceNode,
+  setSdl as setAudioSdl,
+} from 'webaudio-node';
 import createFetch from './fetch.js';
 import createXMLHttpRequest from './xhr.js';
 import { createObjectURL, revokeObjectURL, fetchBlobFromUrl } from './blob.js';
@@ -200,9 +208,29 @@ globalThis.AudioDestinationNode = AudioDestinationNode;
 class WebGLRenderingContext {}
 globalThis.WebGLRenderingContext = WebGLRenderingContext;
 globalThis.WebGL2RenderingContext = WebGL2RenderingContext;
+// Full WebAudio graph surface (webaudio-node exports ~20 classes; expose them
+// all so games can reach filters/analysers/reverb/spatial/compression, not just
+// the basic oscillator+gain path).
+globalThis.OfflineAudioContext = OfflineAudioContext;
+globalThis.AudioNode = AudioNode;
+globalThis.AudioParam = AudioParam;
+globalThis.PeriodicWave = PeriodicWave;
 globalThis.OscillatorNode = OscillatorNode;
 globalThis.GainNode = GainNode;
 globalThis.AudioBuffer = AudioBuffer;
+globalThis.AudioBufferSourceNode = AudioBufferSourceNode;
+globalThis.BiquadFilterNode = BiquadFilterNode;
+globalThis.DelayNode = DelayNode;
+globalThis.StereoPannerNode = StereoPannerNode;
+globalThis.PannerNode = PannerNode;
+globalThis.ConstantSourceNode = ConstantSourceNode;
+globalThis.ChannelSplitterNode = ChannelSplitterNode;
+globalThis.ChannelMergerNode = ChannelMergerNode;
+globalThis.AnalyserNode = AnalyserNode;
+globalThis.DynamicsCompressorNode = DynamicsCompressorNode;
+globalThis.WaveShaperNode = WaveShaperNode;
+globalThis.IIRFilterNode = IIRFilterNode;
+globalThis.ConvolverNode = ConvolverNode;
 
 globalThis.sdl = sdl;
 setAudioSdl(sdl);
@@ -634,8 +662,17 @@ async function main() {
     Worker: globalThis.Worker, WebSocket: globalThis.WebSocket,
     MutationObserver: globalThis.MutationObserver,
     document: globalThis.document, screen: globalThis.screen,
-    AudioContext: globalThis.AudioContext, AudioDestinationNode: globalThis.AudioDestinationNode,
-    OscillatorNode: globalThis.OscillatorNode, GainNode: globalThis.GainNode, AudioBuffer: globalThis.AudioBuffer,
+    AudioContext: globalThis.AudioContext, OfflineAudioContext: globalThis.OfflineAudioContext,
+    AudioDestinationNode: globalThis.AudioDestinationNode, AudioBuffer: globalThis.AudioBuffer,
+    AudioNode: globalThis.AudioNode, AudioParam: globalThis.AudioParam, PeriodicWave: globalThis.PeriodicWave,
+    OscillatorNode: globalThis.OscillatorNode, GainNode: globalThis.GainNode,
+    AudioBufferSourceNode: globalThis.AudioBufferSourceNode, BiquadFilterNode: globalThis.BiquadFilterNode,
+    DelayNode: globalThis.DelayNode, StereoPannerNode: globalThis.StereoPannerNode, PannerNode: globalThis.PannerNode,
+    ConstantSourceNode: globalThis.ConstantSourceNode,
+    ChannelSplitterNode: globalThis.ChannelSplitterNode, ChannelMergerNode: globalThis.ChannelMergerNode,
+    AnalyserNode: globalThis.AnalyserNode, DynamicsCompressorNode: globalThis.DynamicsCompressorNode,
+    WaveShaperNode: globalThis.WaveShaperNode, IIRFilterNode: globalThis.IIRFilterNode,
+    ConvolverNode: globalThis.ConvolverNode,
     WebGLRenderingContext: globalThis.WebGLRenderingContext, WebGL2RenderingContext: globalThis.WebGL2RenderingContext,
     requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame,
     requestIdleCallback: (cb) => setTimeout(() => cb({ timeRemaining: () => 10 }), 0),
