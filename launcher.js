@@ -1071,6 +1071,16 @@ export async function createHostSession(gamePath, opts = {}) {
   const height = opts.height || DEFAULT_GAME_HEIGHT;
   const stepMs = opts.stepMs || (1000 / 60);
 
+  // An embedder (e.g. retroemu) can pass its OWN @kmamal/sdl instance so gamepad-node +
+  // webaudio-node inside this realm use the SAME native SDL the host already pumps —
+  // instead of a possibly-different duplicate copy from the module tree (which would leave
+  // the game reading a dead controller / silent audio). Must run before installHostGlobals
+  // (which wires webaudio's SDL) and before any getGamepads read.
+  if (opts.sdl) {
+    try { installNavigatorShim({ sdl: opts.sdl }); } catch { /* no setSdl support */ }
+    try { setAudioSdl(opts.sdl); } catch { /* no setSdl support */ }
+  }
+
   installHostGlobals();
   options = buildOptions(opts);
 
