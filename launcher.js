@@ -1169,12 +1169,35 @@ export async function createHostSession(gamePath, opts = {}) {
       return virtualTime;
     },
     /**
-     * Read the offscreen canvas back as RGBA. Uses the napi-rs canvas's raw pixel
-     * buffer (canvas.data()) — the same readback main()'s window path uses — rather
-     * than a separate 2d context's getImageData (which wouldn't see the game's draws
-     * on WebGL canvases or a different context instance). @returns {{data,width,height}}
+     * Read the offscreen canvas back as RGBA. WebGL games render into the GL
+     * context (pbuffer), never the napi-rs 2D buffer, so they need a
+     * gl.readPixels + Y-flip readback, the same one main()'s SDL-fallback path
+     * uses. 2D games use the napi-rs canvas's raw pixel buffer (canvas.data()).
+     * @returns {{data,width,height}}
      */
     readFrame() {
+      if (canvas._isWebGL && canvas._glCtx) {
+        const gl = canvas._glCtx;
+        const w = canvas.width;
+        const h = canvas.height;
+        const pixels = new Uint8Array(w * h * 4);
+        gl.makeCurrent?.();
+        gl.finish();
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        // GL rows are bottom-up; flip to the top-down order callers expect.
+        const rowSize = w * 4;
+        const halfH = h >> 1;
+        for (let y = 0; y < halfH; y++) {
+          const topOff = y * rowSize;
+          const botOff = (h - 1 - y) * rowSize;
+          for (let i = 0; i < rowSize; i++) {
+            const tmp = pixels[topOff + i];
+            pixels[topOff + i] = pixels[botOff + i];
+            pixels[botOff + i] = tmp;
+          }
+        }
+        return { data: new Uint8ClampedArray(pixels.buffer), width: w, height: h };
+      }
       const raw = canvas.data(); // Uint8ClampedArray-like, RGBA, width*height*4
       return { data: new Uint8ClampedArray(raw.buffer.slice(0)), width: canvas.width, height: canvas.height };
     },
