@@ -32,7 +32,7 @@ fi
 cd /storage/jsgamelauncher
 
 log "Starting jsgamelauncher with: $@"
-node index.js "$@" 2>> "$LOG_FILE"
+node index.js "$@" >> "$LOG_FILE" 2>&1
 EXIT_CODE=$?
 log "jsgamelauncher exited with code: $EXIT_CODE"
 exit $EXIT_CODE
