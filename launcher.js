@@ -1014,9 +1014,32 @@ async function main() {
     callbackTime+= (performance.now() - callbackStartTime);
 
     launcherDraw();
+
+    /*
+     * Optional automated-run limits.
+     *
+     * A person playing wants the loop to run until they quit, so there is no cap
+     * by default. But anything scripted — CI, a benchmark, a parity sweep — needs
+     * a guaranteed exit, and without one the only way to stop the process is to
+     * kill it, which loses whatever it was about to report. Both limits are opt-in
+     * via env so no existing behaviour changes.
+     */
+    if (maxFrames && frameCount >= maxFrames) {
+      console.log(`jsgamelauncher: stopping after ${frameCount} frames (JSGAME_MAX_FRAMES)`);
+      process.exit(0);
+    }
+    if (maxSeconds && (performance.now() - loopStartedAt) > maxSeconds * 1000) {
+      console.log(`jsgamelauncher: stopping after ${maxSeconds}s (JSGAME_MAX_SECONDS)`);
+      process.exit(0);
+    }
+
     setImmediate(launcherLoop);
   }
   
+  const maxFrames = Number(process.env.JSGAME_MAX_FRAMES || 0);
+  const maxSeconds = Number(process.env.JSGAME_MAX_SECONDS || 0);
+  const loopStartedAt = performance.now();
+
   launcherLoop();
 
   // Log the FPS (frames per second)
