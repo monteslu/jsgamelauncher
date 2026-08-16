@@ -5,6 +5,7 @@ import { createWebGL2Context } from 'webgl-node';
 let _displayGl = null;
 let _displaySwapBuffers = null;
 let _onWebGLCanvas = null;
+let _onCanvasResize = null;
 export function setDisplayContext(gl, swapBuffers) {
   _displayGl = gl;
   _displaySwapBuffers = swapBuffers;
@@ -13,12 +14,62 @@ export function onWebGLCanvas(cb) {
   _onWebGLCanvas = cb;
 }
 
+/**
+ * Notified when a WebGL game canvas changes size, so the launcher can resize the
+ * render target to match. Without this the game renders into whatever size the
+ * FBO was created at and everything past it is undefined.
+ */
+export function onCanvasResize(cb) {
+  _onCanvasResize = cb;
+}
+
 export function createCanvas(width, height) {
   const canvas = npcc(width, height);
   const baseGetContext = canvas.getContext.bind(canvas);
   let ctx;
   let glCtx;
   canvas.style = {};
+
+  /*
+   * Intercept width/height so a resize can reach the GL render target.
+   *
+   * @napi-rs/canvas reallocates its 2D backing store on assignment, but the
+   * launcher's GL FBO knows nothing about it. Forwarding the new size lets the
+   * launcher resize the FBO; a WebGL game that sets canvas.width otherwise keeps
+   * drawing into the original-size target with no indication anything is wrong.
+   */
+  const _sizeDesc = {
+    width: Object.getOwnPropertyDescriptor(Object.getPrototypeOf(canvas), 'width'),
+    height: Object.getOwnPropertyDescriptor(Object.getPrototypeOf(canvas), 'height'),
+  };
+  if (_sizeDesc.width && _sizeDesc.height && _sizeDesc.width.set && _sizeDesc.height.set) {
+    Object.defineProperty(canvas, 'width', {
+      configurable: true,
+      enumerable: true,
+      get() { return _sizeDesc.width.get.call(canvas); },
+      set(v) {
+        const n = v | 0;
+        if (n === _sizeDesc.width.get.call(canvas)) return;
+        _sizeDesc.width.set.call(canvas, n);
+        if (_onCanvasResize) {
+          _onCanvasResize(canvas, n, _sizeDesc.height.get.call(canvas));
+        }
+      },
+    });
+    Object.defineProperty(canvas, 'height', {
+      configurable: true,
+      enumerable: true,
+      get() { return _sizeDesc.height.get.call(canvas); },
+      set(v) {
+        const n = v | 0;
+        if (n === _sizeDesc.height.get.call(canvas)) return;
+        _sizeDesc.height.set.call(canvas, n);
+        if (_onCanvasResize) {
+          _onCanvasResize(canvas, _sizeDesc.width.get.call(canvas), n);
+        }
+      },
+    });
+  }
   if (!canvas.addEventListener) {
     const _listeners = {};
     canvas.addEventListener = (type, fn, opts) => {

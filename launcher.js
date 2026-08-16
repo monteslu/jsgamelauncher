@@ -7,7 +7,7 @@ import Worker from 'web-worker';
 import WebSocket from 'ws';
 import getOptions from './options.js';
 import { installNavigatorShim, loadAdditionalControllerConfig } from 'gamepad-node';
-import { createCanvas, OffscreenCanvas, setDisplayContext, onWebGLCanvas } from './canvas.js';
+import { createCanvas, OffscreenCanvas, setDisplayContext, onWebGLCanvas, onCanvasResize } from './canvas.js';
 import { createWebGL2Context, WebGL2RenderingContext } from 'webgl-node';
 import { createImageClass, createLoadImage } from './image.js';
 import createLocalStorage from './localstorage.js';
@@ -102,22 +102,62 @@ let romDir;                      // resolved game root directory
 let gameFile;                    // resolved entry file inside romDir
 
 // rAF plumbing (installed on globalThis by installHostGlobals):
+//
+// This is a QUEUE, not a single slot. The browser fires every callback registered
+// before a frame, in registration order; a single slot silently discards all but
+// the last, so a game and a library (or two systems in the same game) cannot both
+// animate — the earlier registrations just never run, with no error anywhere.
+//
+// Callbacks registered DURING a frame go to the pending list and run on the NEXT
+// frame, which is also what the browser does: it snapshots the callback list before
+// dispatch. Without that split, the standard
+// `function frame(){ ...; requestAnimationFrame(frame); }` pattern would spin
+// forever inside one tick.
 let rafCallbackId = 1;
-let currentRafCallback;
+let rafCallbacks = [];         // fires this frame
+let rafPending = [];           // registered mid-frame; fires next frame
+let rafDispatching = false;
 
 function requestAnimationFrame(callback) {
   rafCallbackId++;
-  currentRafCallback = {
-    id: rafCallbackId,
-    callback,
-  };
+  const entry = { id: rafCallbackId, callback };
+  (rafDispatching ? rafPending : rafCallbacks).push(entry);
   return rafCallbackId;
 };
 
 function cancelAnimationFrame(id) {
-  if (currentRafCallback?.id === id) {
-    currentRafCallback = null;
+  for (const list of [rafCallbacks, rafPending]) {
+    const i = list.findIndex((e) => e.id === id);
+    if (i >= 0) { list.splice(i, 1); return; }
   }
+};
+
+/**
+ * Fire every callback queued for this frame, in order, with one timestamp.
+ *
+ * A throwing callback must not take the rest of the frame's callbacks down with
+ * it, so each is isolated; the error is reported rather than swallowed.
+ */
+function runAnimationFrameCallbacks(timestamp) {
+  if (rafCallbacks.length === 0) return 0;
+  const due = rafCallbacks;
+  rafCallbacks = [];
+  rafDispatching = true;
+  let fired = 0;
+  for (const entry of due) {
+    try {
+      entry.callback(timestamp);
+      fired++;
+    } catch (err) {
+      console.error('requestAnimationFrame callback threw:', err && (err.stack || err));
+    }
+  }
+  rafDispatching = false;
+  if (rafPending.length) {
+    rafCallbacks = rafCallbacks.concat(rafPending);
+    rafPending = [];
+  }
+  return fired;
 };
 
 const DEFAULT_GAME_WIDTH = 640;
@@ -648,6 +688,8 @@ async function main() {
   // FBO for WebGL game rendering (created after canvas, set up below)
   let gameFBO = null;
   let gameFBOTexture = null;
+  let gameDepthRB = null;
+  let resizeGameFBO = null;
 
   const eventHandlers = initializeEvents(appWindow);
   callResizeEvents = eventHandlers.callResizeEvents;
@@ -687,7 +729,7 @@ async function main() {
     displayGl.bindFramebuffer(displayGl.FRAMEBUFFER, gameFBO);
     displayGl.framebufferTexture2D(displayGl.FRAMEBUFFER, displayGl.COLOR_ATTACHMENT0, displayGl.TEXTURE_2D, gameFBOTexture, 0);
 
-    const gameDepthRB = displayGl.createRenderbuffer();
+    gameDepthRB = displayGl.createRenderbuffer();
     displayGl.bindRenderbuffer(displayGl.RENDERBUFFER, gameDepthRB);
     displayGl.renderbufferStorage(displayGl.RENDERBUFFER, displayGl.DEPTH24_STENCIL8, canvas.width, canvas.height);
     displayGl.framebufferRenderbuffer(displayGl.FRAMEBUFFER, displayGl.DEPTH_STENCIL_ATTACHMENT, displayGl.RENDERBUFFER, gameDepthRB);
@@ -712,7 +754,51 @@ async function main() {
     displayGl._height = canvas.height;
     origBindFramebuffer(displayGl.FRAMEBUFFER, gameFBO);
     displayGl.viewport(0, 0, canvas.width, canvas.height);
+
+    /*
+     * Follow the game canvas when it resizes.
+     *
+     * The FBO and its depth buffer are sized once, from the canvas dimensions at
+     * startup. A game that sets `canvas.width = 960` afterwards used to keep
+     * rendering into a 640x480 FBO: geometry was clipped to the old size and any
+     * readback past it returned pixels that were never drawn — which reads as a
+     * rendering bug rather than a sizing one. (Found by an orientation canary
+     * reporting three wrong corners while the frame rate looked perfectly fine.)
+     *
+     * The default framebuffer still follows the WINDOW; only the game's render
+     * target follows the canvas.
+     */
+    resizeGameFBO = (w, h) => {
+      if (!displayGl || !gameFBO) return;
+      if (w === displayGl._width && h === displayGl._height) return;
+      if (!(w > 0 && h > 0)) return;
+
+      displayGl.bindTexture(displayGl.TEXTURE_2D, gameFBOTexture);
+      displayGl.texImage2D(displayGl.TEXTURE_2D, 0, displayGl.RGBA, w, h, 0,
+                           displayGl.RGBA, displayGl.UNSIGNED_BYTE, null);
+      displayGl.bindRenderbuffer(displayGl.RENDERBUFFER, gameDepthRB);
+      displayGl.renderbufferStorage(displayGl.RENDERBUFFER, displayGl.DEPTH24_STENCIL8, w, h);
+
+      origBindFramebuffer(displayGl.FRAMEBUFFER, gameFBO);
+      const st = displayGl.checkFramebufferStatus(displayGl.FRAMEBUFFER);
+      if (st !== displayGl.FRAMEBUFFER_COMPLETE) {
+        console.error('Game FBO incomplete after resize to', w, 'x', h, ':', st);
+        return;
+      }
+      displayGl._width = w;
+      displayGl._height = h;
+      displayGl.viewport(0, 0, w, h);
+      console.log('Game FBO resized:', w, 'x', h);
+    };
   }
+
+  // A WebGL game that resizes its canvas must get a render target of the new size.
+  onCanvasResize((resizedCanvas, w, h) => {
+    // A game typically sets canvas.width BEFORE asking for a GL context, so this
+    // can fire before the FBO is even created. resizeGameFBO is a no-op then, and
+    // the size is picked up when the context is requested.
+    if (resizedCanvas === canvas && resizeGameFBO) resizeGameFBO(w, h);
+  });
 
   // Track when a game-created canvas gets a WebGL context (e.g. Phaser.AUTO)
   onWebGLCanvas((glCanvas) => {
@@ -924,11 +1010,7 @@ async function main() {
     }
 
     const callbackStartTime = performance.now();
-    if (currentRafCallback) {
-      let thisCallback = currentRafCallback;
-      currentRafCallback = null;
-      thisCallback.callback(performance.now());
-    }
+    runAnimationFrameCallbacks(performance.now());
     callbackTime+= (performance.now() - callbackStartTime);
 
     launcherDraw();
@@ -1159,11 +1241,7 @@ export async function createHostSession(gamePath, opts = {}) {
      */
     async stepFrame() {
       virtualTime += stepMs;
-      if (currentRafCallback) {
-        const cb = currentRafCallback;
-        currentRafCallback = null;
-        cb.callback(virtualTime);
-      }
+      runAnimationFrameCallbacks(virtualTime);
       // Let microtasks + immediate/timer callbacks (async asset loads) run.
       await new Promise((resolve) => setImmediate(resolve));
       return virtualTime;
@@ -1208,7 +1286,9 @@ export async function createHostSession(gamePath, opts = {}) {
     },
     destroy() {
       try { realm?.dispose?.(); } catch { /* ignore */ }
-      currentRafCallback = null;
+      rafCallbacks = [];
+      rafPending = [];
+      rafDispatching = false;
     },
   };
 }
