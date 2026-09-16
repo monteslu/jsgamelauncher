@@ -8,7 +8,13 @@ import WebSocket from 'ws';
 import getOptions from './options.js';
 import { installNavigatorShim, loadAdditionalControllerConfig } from 'gamepad-node';
 import { createCanvas, OffscreenCanvas, setDisplayContext, onWebGLCanvas, onCanvasResize } from './canvas.js';
-import { createWebGL2Context, WebGL2RenderingContext } from 'webgl-node';
+import {
+  createWebGL2Context, WebGL2RenderingContext,
+  WebGLBuffer, WebGLFramebuffer, WebGLProgram, WebGLQuery, WebGLRenderbuffer,
+  WebGLSampler, WebGLShader, WebGLShaderPrecisionFormat, WebGLSync, WebGLTexture,
+  WebGLTransformFeedback, WebGLUniformLocation, WebGLVertexArrayObject,
+  WebGLActiveInfo,
+} from 'webgl-node';
 import { createImageClass, createLoadImage } from './image.js';
 import createLocalStorage from './localstorage.js';
 import initializeEvents from './events.js';
@@ -326,6 +332,32 @@ function installHostGlobals() {
   globalThis.AudioDestinationNode = AudioDestinationNode;
   globalThis.WebGLRenderingContext = WebGLRenderingContext;
   globalThis.WebGL2RenderingContext = WebGL2RenderingContext;
+  /*
+   * The WebGL OBJECT classes (not just the contexts).
+   *
+   * Real browsers expose these as globals, and libraries use them for identity
+   * checks rather than duck-typing. twgl (which scratch-render and many other
+   * WebGL libs bundle) distinguishes a texture attachment from a renderbuffer
+   * with `typeof WebGLTexture !== 'undefined' && t instanceof WebGLTexture`.
+   * With the globals missing, that test is false for BOTH and it throws
+   * "unknown attachment type" from createFramebufferInfo, which reads as a
+   * broken framebuffer rather than a missing global. webgl-node already exports
+   * the real classes; they just were never installed.
+   */
+  globalThis.WebGLBuffer = WebGLBuffer;
+  globalThis.WebGLFramebuffer = WebGLFramebuffer;
+  globalThis.WebGLProgram = WebGLProgram;
+  globalThis.WebGLQuery = WebGLQuery;
+  globalThis.WebGLRenderbuffer = WebGLRenderbuffer;
+  globalThis.WebGLSampler = WebGLSampler;
+  globalThis.WebGLShader = WebGLShader;
+  globalThis.WebGLShaderPrecisionFormat = WebGLShaderPrecisionFormat;
+  globalThis.WebGLSync = WebGLSync;
+  globalThis.WebGLTexture = WebGLTexture;
+  globalThis.WebGLTransformFeedback = WebGLTransformFeedback;
+  globalThis.WebGLUniformLocation = WebGLUniformLocation;
+  globalThis.WebGLVertexArrayObject = WebGLVertexArrayObject;
+  globalThis.WebGLActiveInfo = WebGLActiveInfo;
   // Full WebAudio graph surface (webaudio-node exports ~20 classes; expose them
   // all so games can reach filters/analysers/reverb/spatial/compression, not just
   // the basic oscillator+gain path).
@@ -387,6 +419,15 @@ function buildRealmGlobals() {
     WaveShaperNode: globalThis.WaveShaperNode, IIRFilterNode: globalThis.IIRFilterNode,
     ConvolverNode: globalThis.ConvolverNode,
     WebGLRenderingContext: globalThis.WebGLRenderingContext, WebGL2RenderingContext: globalThis.WebGL2RenderingContext,
+    WebGLBuffer: globalThis.WebGLBuffer, WebGLFramebuffer: globalThis.WebGLFramebuffer,
+    WebGLProgram: globalThis.WebGLProgram, WebGLQuery: globalThis.WebGLQuery,
+    WebGLRenderbuffer: globalThis.WebGLRenderbuffer, WebGLSampler: globalThis.WebGLSampler,
+    WebGLShader: globalThis.WebGLShader, WebGLShaderPrecisionFormat: globalThis.WebGLShaderPrecisionFormat,
+    WebGLSync: globalThis.WebGLSync, WebGLTexture: globalThis.WebGLTexture,
+    WebGLTransformFeedback: globalThis.WebGLTransformFeedback,
+    WebGLUniformLocation: globalThis.WebGLUniformLocation,
+    WebGLVertexArrayObject: globalThis.WebGLVertexArrayObject,
+    WebGLActiveInfo: globalThis.WebGLActiveInfo,
     requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame,
     requestIdleCallback: (cb) => setTimeout(() => cb({ timeRemaining: () => 10 }), 0),
     cancelIdleCallback: clearTimeout,
