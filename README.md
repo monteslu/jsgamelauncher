@@ -118,6 +118,32 @@ the process. Call it once per process.
 >
 > Building your game to a bundle avoids both.
 
+## Automated runs (CI, benchmarks, screenshots)
+
+The game loop runs until the player quits, which is right for playing and wrong for
+anything scripted: without a stopping condition the only way to end the process is
+to kill it, which loses whatever it was about to report. Two environment variables
+add a stopping condition. Neither is set by default, so interactive play is
+unchanged.
+
+```bash
+JSGAME_MAX_SECONDS=10 npx rungame ./my-game   # stop after 10 seconds
+JSGAME_MAX_FRAMES=600 npx rungame ./my-game   # stop after 600 frames
+```
+
+Both exit cleanly through the normal shutdown path, closing the game window.
+
+## A smaller, Node-free sibling
+
+[jsgamelauncher-quickjs](https://github.com/monteslu/jsgamelauncher-quickjs) runs the
+same `.jsgame` contract on QuickJS instead of Node — a single ~11 MB binary with no
+Node install, and games can be fused into one self-contained executable.
+
+It is faster on 2D (sprites and canvas work land in C rather than JS) and slower on
+heavy 3D, because QuickJS has no JIT and three.js does its matrix math in JS loops.
+**This launcher remains the better choice for heavy three.js and for anything using
+WebAssembly**, both of which want V8. The two are complementary, not a replacement.
+
 ## Notes on Installing to a device
 
 For now we only support downloading the latest version of jsgamelaucher. At some point we might modify the download script to accommodate downloading specific published versions. Same goes for the different firmware versions you see below . . . generally you will need the latest.
